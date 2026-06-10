@@ -8,6 +8,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -37,7 +38,18 @@ public class SecurityConfig {
                 .cors(cors -> cors.configure(http))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers(
+                                "/api/auth/**",
+                                // Documentation OpenAPI / Swagger (le chemin du spec est /api-docs, cf. application.yml)
+                                "/api-docs/**", "/api-docs.yaml",
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**", "/swagger-ui.html"
+                        ).permitAll()
+                        // Gestion des pharmacies : réservée au Service Régional et à l'Admin
+                        // (le Service Central peut consulter via GET mais pas créer/modifier/supprimer)
+                        .requestMatchers(HttpMethod.POST, "/api/pharmacies/**").hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/pharmacies/**").hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/pharmacies/**").hasAnyRole("SERVICE_REGIONAL", "ADMIN")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

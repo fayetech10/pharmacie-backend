@@ -4,9 +4,11 @@ import com.csu.pharmacie.dto.PharmacieRequest;
 import com.csu.pharmacie.entity.*;
 import com.csu.pharmacie.exception.ConflictException;
 import com.csu.pharmacie.exception.ResourceNotFoundException;
+import com.csu.pharmacie.exception.ForbiddenException;
 import com.csu.pharmacie.repository.PharmacieRepository;
 import com.csu.pharmacie.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -21,7 +23,18 @@ public class PharmacieService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    private User getCurrentUser() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("Utilisateur non trouvé"));
+    }
+
     public List<Pharmacie> getAllPharmacies() {
+        User user = getCurrentUser();
+        // Le Service Régional ne voit que les pharmacies de sa propre région
+        if (user.getRole() == Role.SERVICE_REGIONAL) {
+            return pharmacieRepository.findByRegionId(user.getRegionId());
+        }
         return pharmacieRepository.findAll();
     }
 
@@ -31,6 +44,12 @@ public class PharmacieService {
     }
 
     public Pharmacie createPharmacie(PharmacieRequest request) {
+        User currentUser = getCurrentUser();
+        // Un Service Régional ne peut créer une pharmacie que dans sa propre région
+        if (currentUser.getRole() == Role.SERVICE_REGIONAL) {
+            request.setRegionId(currentUser.getRegionId());
+        }
+
         if (pharmacieRepository.findByCode(request.getCode()).isPresent()) {
             throw new ConflictException("Code pharmacie déjà utilisé");
         }
@@ -83,6 +102,16 @@ public class PharmacieService {
         Pharmacie pharmacie = getPharmacieById(id);
         String oldEmail = pharmacie.getEmail();
 
+        User currentUser = getCurrentUser();
+        // Un Service Régional ne peut modifier que les pharmacies de sa propre région,
+        // et ne peut pas les transférer vers une autre région.
+        if (currentUser.getRole() == Role.SERVICE_REGIONAL) {
+            if (!currentUser.getRegionId().equals(pharmacie.getRegionId())) {
+                throw new ForbiddenException("Vous ne pouvez modifier que les pharmacies de votre région");
+            }
+            request.setRegionId(currentUser.getRegionId());
+        }
+
         if (!pharmacie.getCode().equals(request.getCode())) {
             if (pharmacieRepository.findByCode(request.getCode()).isPresent()) {
                 throw new ConflictException("Code pharmacie déjà utilisé");
@@ -115,6 +144,14 @@ public class PharmacieService {
 
     public void deletePharmacie(String id) {
         Pharmacie pharmacie = getPharmacieById(id);
+
+        User currentUser = getCurrentUser();
+        // Un Service Régional ne peut supprimer que les pharmacies de sa propre région
+        if (currentUser.getRole() == Role.SERVICE_REGIONAL
+                && !currentUser.getRegionId().equals(pharmacie.getRegionId())) {
+            throw new ForbiddenException("Vous ne pouvez supprimer que les pharmacies de votre région");
+        }
+
         // Supprimer l'utilisateur associé également
         if (pharmacie.getResponsableId() != null) {
             userRepository.deleteById(pharmacie.getResponsableId());
