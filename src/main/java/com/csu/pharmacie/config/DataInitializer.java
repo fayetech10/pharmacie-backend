@@ -127,54 +127,5 @@ public class DataInitializer implements CommandLineRunner {
                 .actif(true)
                 .build();
         pharmacie = pharmacieRepository.save(pharmacie);
-
-        // Pharmacien
-        User pharmacien = User.builder()
-                .nom("Diop")
-                .prenom("Amadou")
-                .email("pharmacien@csu.sn")
-                .password(passwordEncoder.encode("password123"))
-                .role(Role.PHARMACIEN)
-                .pharmacieId(pharmacie.getId())
-                .actif(true)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        userRepository.save(pharmacien);
-        
-        // Sample Facture
-        List<LigneFacture> lignes = Arrays.asList(
-                LigneFacture.builder().medicament("Paracétamol").codeProduit("MED001").quantite(100).prixUnitaire(500).montant(50000).build()
-        );
-        Facture facture = Facture.builder()
-                .pharmacieId(pharmacie.getId())
-                .pharmacieNom(pharmacie.getNom())
-                .regionId(pharmacie.getRegionId())
-                .mois(6)
-                .annee(2024)
-                .montantTotal(50000)
-                .statut(StatutFacture.ENVOYEE)
-                .lignes(lignes)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .createdBy(pharmacien.getId())
-                .historique(Arrays.asList(
-                        HistoriqueAction.builder()
-                                .date(LocalDateTime.now().minusDays(1))
-                                .utilisateurId(pharmacien.getId())
-                                .utilisateurNom("Amadou Diop")
-                                .statut(StatutFacture.BROUILLON)
-                                .commentaire("Création")
-                                .build(),
-                        HistoriqueAction.builder()
-                                .date(LocalDateTime.now())
-                                .utilisateurId(pharmacien.getId())
-                                .utilisateurNom("Amadou Diop")
-                                .statut(StatutFacture.ENVOYEE)
-                                .commentaire("Envoi au service régional")
-                                .build()
-                ))
-                .build();
-        factureRepository.save(facture);
     }
 }
