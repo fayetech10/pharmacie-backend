@@ -1,0 +1,32 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  data:
+    mongodb:
+      # En production, fournir l'URI via la variable d'environnement SPRING_DATA_MONGODB_URI.
+      # Le défaut ci-dessous pointe vers une instance MongoDB locale (dev).
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb+srv://sencsu94_db_user:YST1cZ8ZOp0FbHte@cluster0.qvqae2u.mongodb.net/pharmacie_csu}
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${MAX_FILE_SIZE:10MB}
+      max-request-size: ${MAX_REQUEST_SIZE:10MB}
+  application:
+    name: pharmacie-csu
+
+app:
+  jwt:
+    # OBLIGATOIRE en production : définir APP_JWT_SECRET (>= 32 caractères).
+    # Le défaut n'est destiné qu'au développement local.
+    secret: ${APP_JWT_SECRET:devLocalSecretChangeMeInProduction0123456789}
+    expiration: ${APP_JWT_EXPIRATION:86400000}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://localhost}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

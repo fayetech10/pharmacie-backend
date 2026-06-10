@@ -1,0 +1,20 @@
+package com.csu.pharmacie.entity;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class LigneFacture {
+    private String patientNomPrenom;
+    private String patientMatricule;
+    private String medicament;
+    private String codeProduit;
+    private int quantite;
+    private double prixUnitaire;
+    private double montant;
+}

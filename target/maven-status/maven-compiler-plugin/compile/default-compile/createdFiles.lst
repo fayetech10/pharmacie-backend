@@ -1,0 +1,4 @@
+com\csu\pharmacie\exception\ConflictException.class
+com\csu\pharmacie\exception\ForbiddenException.class
+com\csu\pharmacie\exception\ResourceNotFoundException.class
+com\csu\pharmacie\exception\BusinessException.class
