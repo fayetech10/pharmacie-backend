@@ -1,6 +1,7 @@
 package com.csu.pharmacie.controller;
 
 import com.csu.pharmacie.dto.FactureRequest;
+import com.csu.pharmacie.dto.LigneDecisionRequest;
 import com.csu.pharmacie.dto.LigneFactureDto;
 import com.csu.pharmacie.dto.ValidationRequest;
 import com.csu.pharmacie.entity.Facture;
@@ -84,6 +85,13 @@ public class FactureController {
         return ResponseEntity.ok(factureService.conformerFacture(id));
     }
 
+    @PostMapping("/{id}/lignes/{index}/decision")
+    public ResponseEntity<Facture> deciderLigne(@PathVariable String id,
+                                                @PathVariable int index,
+                                                @RequestBody LigneDecisionRequest request) {
+        return ResponseEntity.ok(factureService.deciderLigne(id, index, request));
+    }
+
     @PostMapping("/{id}/valider")
     public ResponseEntity<Facture> validerFacture(@PathVariable String id, @Valid @RequestBody ValidationRequest request) {
         return ResponseEntity.ok(factureService.validerFacture(id, request));
@@ -92,6 +100,11 @@ public class FactureController {
     @PostMapping("/{id}/rejeter")
     public ResponseEntity<Facture> rejeterFacture(@PathVariable String id, @Valid @RequestBody ValidationRequest request) {
         return ResponseEntity.ok(factureService.rejeterFacture(id, request));
+    }
+
+    @PostMapping("/{id}/renvoyer-correction")
+    public ResponseEntity<Facture> renvoyerPourCorrection(@PathVariable String id) {
+        return ResponseEntity.ok(factureService.renvoyerPourCorrection(id));
     }
 
     @GetMapping("/export/excel")

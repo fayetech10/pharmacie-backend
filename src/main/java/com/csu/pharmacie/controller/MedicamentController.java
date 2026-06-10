@@ -57,4 +57,19 @@ public class MedicamentController {
             return ResponseEntity.badRequest().body(error);
         }
     }
+
+    @PostMapping("/import-exclusions")
+    public ResponseEntity<?> importExclusions(@RequestParam("file") MultipartFile file) {
+        try {
+            medicamentService.importerMedicamentsExclus(file.getInputStream());
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            Map<String, String> error = new java.util.HashMap<>();
+            error.put("message", e.getMessage() != null ? e.getMessage() : "Erreur lors de l'importation");
+            if (e.getCause() != null) {
+                error.put("cause", e.getCause().getMessage());
+            }
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
 }

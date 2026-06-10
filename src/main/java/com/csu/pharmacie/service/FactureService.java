@@ -1,6 +1,7 @@
 package com.csu.pharmacie.service;
 
 import com.csu.pharmacie.dto.FactureRequest;
+import com.csu.pharmacie.dto.LigneDecisionRequest;
 import com.csu.pharmacie.dto.LigneFactureDto;
 import com.csu.pharmacie.dto.ValidationRequest;
 import com.csu.pharmacie.entity.*;
@@ -206,7 +207,7 @@ public class FactureService {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
 
-        if (facture.getStatut() != StatutFacture.BROUILLON) {
+        if (facture.getStatut() != StatutFacture.BROUILLON && facture.getStatut() != StatutFacture.A_CORRIGER) {
             throw new BusinessException("Impossible de modifier une facture déjà envoyée");
         }
 
@@ -227,11 +228,22 @@ public class FactureService {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
 
-        if (facture.getStatut() != StatutFacture.BROUILLON) {
-            throw new BusinessException("La facture n'est pas au statut brouillon");
+        boolean correction = facture.getStatut() == StatutFacture.A_CORRIGER;
+        if (facture.getStatut() != StatutFacture.BROUILLON && !correction) {
+            throw new BusinessException("La facture n'est pas modifiable pour envoi");
         }
 
-        changerStatut(facture, StatutFacture.ENVOYEE, user, "Envoi au service régional");
+        // Resoumission après correction : on réinitialise les décisions de lignes
+        if (correction && facture.getLignes() != null) {
+            for (LigneFacture ligne : facture.getLignes()) {
+                ligne.setStatutLigne(StatutLigne.EN_ATTENTE);
+                ligne.setMotifRejet(null);
+            }
+            facture.setCommentaireRejet(null);
+        }
+
+        changerStatut(facture, StatutFacture.ENVOYEE, user,
+                correction ? "Renvoi après correction" : "Envoi au service régional");
         return facture;
     }
 
@@ -267,6 +279,39 @@ public class FactureService {
         return facture;
     }
 
+    public Facture deciderLigne(String id, int index, LigneDecisionRequest request) {
+        Facture facture = getFactureById(id);
+        User user = getCurrentUser();
+
+        if (user.getRole() != Role.SERVICE_REGIONAL) {
+            throw new ForbiddenException("Seul le service régional peut vérifier les lignes");
+        }
+
+        if (facture.getStatut() != StatutFacture.EN_VERIFICATION) {
+            throw new BusinessException("La facture doit être en vérification pour décider des lignes");
+        }
+
+        List<LigneFacture> lignes = facture.getLignes();
+        if (lignes == null || index < 0 || index >= lignes.size()) {
+            throw new BusinessException("Ligne introuvable");
+        }
+
+        LigneFacture ligne = lignes.get(index);
+        if (request.isAccepter()) {
+            ligne.setStatutLigne(StatutLigne.ACCEPTEE);
+            ligne.setMotifRejet(null);
+        } else {
+            if (request.getMotif() == null || request.getMotif().isBlank()) {
+                throw new BusinessException("Le motif est obligatoire pour rejeter une ligne");
+            }
+            ligne.setStatutLigne(StatutLigne.REJETEE);
+            ligne.setMotifRejet(request.getMotif());
+        }
+
+        facture.setUpdatedAt(LocalDateTime.now());
+        return factureRepository.save(facture);
+    }
+
     public Facture validerFacture(String id, ValidationRequest request) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
@@ -279,7 +324,35 @@ public class FactureService {
             throw new BusinessException("Statut invalide pour validation");
         }
 
-        changerStatut(facture, StatutFacture.VALIDEE, user, request.getCommentaire());
+        // Validation partielle : on ne conserve/compte que les lignes non rejetées.
+        // Les lignes laissées EN_ATTENTE sont considérées comme acceptées.
+        List<LigneFacture> lignes = facture.getLignes() != null ? facture.getLignes() : new ArrayList<>();
+        long rejetees = lignes.stream().filter(l -> l.getStatutLigne() == StatutLigne.REJETEE).count();
+        long acceptees = lignes.size() - rejetees;
+
+        if (acceptees == 0) {
+            throw new BusinessException("Toutes les lignes sont rejetées : utilisez le rejet de la facture entière");
+        }
+
+        for (LigneFacture ligne : lignes) {
+            if (ligne.getStatutLigne() == StatutLigne.EN_ATTENTE) {
+                ligne.setStatutLigne(StatutLigne.ACCEPTEE);
+            }
+        }
+
+        double montantTotal = lignes.stream()
+                .filter(l -> l.getStatutLigne() != StatutLigne.REJETEE)
+                .mapToDouble(LigneFacture::getMontant)
+                .sum();
+        facture.setMontantTotal(montantTotal);
+
+        String commentaire = request.getCommentaire();
+        if (rejetees > 0) {
+            commentaire = (commentaire == null || commentaire.isBlank() ? "" : commentaire + " — ")
+                    + acceptees + " ligne(s) acceptée(s), " + rejetees + " rejetée(s)";
+        }
+
+        changerStatut(facture, StatutFacture.VALIDEE, user, commentaire);
         return facture;
     }
 
@@ -297,6 +370,30 @@ public class FactureService {
 
         facture.setCommentaireRejet(request.getCommentaire());
         changerStatut(facture, StatutFacture.REJETEE, user, request.getCommentaire());
+        return facture;
+    }
+
+    public Facture renvoyerPourCorrection(String id) {
+        Facture facture = getFactureById(id);
+        User user = getCurrentUser();
+
+        if (user.getRole() != Role.SERVICE_REGIONAL) {
+            throw new ForbiddenException("Seul le service régional peut renvoyer une facture pour correction");
+        }
+
+        if (facture.getStatut() != StatutFacture.EN_VERIFICATION) {
+            throw new BusinessException("La facture n'est pas en vérification");
+        }
+
+        List<LigneFacture> lignes = facture.getLignes() != null ? facture.getLignes() : new ArrayList<>();
+        long rejetees = lignes.stream().filter(l -> l.getStatutLigne() == StatutLigne.REJETEE).count();
+        if (rejetees == 0) {
+            throw new BusinessException("Aucune ligne rejetée : rejetez au moins une ligne avant de renvoyer pour correction");
+        }
+
+        facture.setCommentaireRejet(rejetees + " ligne(s) à corriger");
+        changerStatut(facture, StatutFacture.A_CORRIGER, user,
+                "Renvoi au pharmacien pour correction de " + rejetees + " ligne(s)");
         return facture;
     }
     

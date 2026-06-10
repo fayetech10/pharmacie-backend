@@ -24,6 +24,7 @@ public class Medicament {
     private String liste;
     private StatutMedicament statut;
     private String description;
+    private String motif; // Motif d'exclusion (renseigné pour les médicaments EXCLU)
     @Builder.Default
     private boolean actif = true;
     private LocalDateTime createdAt;

@@ -17,4 +17,8 @@ public class LigneFacture {
     private int quantite;
     private double prixUnitaire;
     private double montant;
+
+    @Builder.Default
+    private StatutLigne statutLigne = StatutLigne.EN_ATTENTE;
+    private String motifRejet;
 }

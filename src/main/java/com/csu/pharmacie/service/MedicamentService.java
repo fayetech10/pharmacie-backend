@@ -69,6 +69,7 @@ public class MedicamentService {
         medicament.setCode(medicamentDetails.getCode());
         medicament.setStatut(medicamentDetails.getStatut());
         medicament.setDescription(medicamentDetails.getDescription());
+        medicament.setMotif(medicamentDetails.getMotif());
         medicament.setActif(medicamentDetails.isActif());
         medicament.setUpdatedAt(LocalDateTime.now());
         
@@ -145,6 +146,84 @@ public class MedicamentService {
             log.info("Importation terminée : {} nouveaux, {} mis à jour", imported, updated);
         } catch (Exception e) {
             log.error("Erreur lors de l'importation du fichier Excel", e);
+            throw new RuntimeException("Erreur lors de l'importation du fichier Excel: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Importe une liste d'EXCLUSIONS. Chaque ligne du fichier décrit une classe de produits
+     * exclus avec une liste de marques (séparées par des virgules). Chaque marque est créée /
+     * mise à jour en statut EXCLU, avec son motif (la classe) et sa description (la sous-catégorie/note).
+     * Import additif : ne modifie pas les médicaments non listés.
+     */
+    public void importerMedicamentsExclus(InputStream is) {
+        checkAccess();
+        try (BufferedInputStream bis = new BufferedInputStream(is);
+             Workbook workbook = new XSSFWorkbook(bis)) {
+
+            log.info("Début de l'importation des médicaments exclus");
+
+            // Feuille dédiée si présente, sinon la première
+            Sheet sheet = workbook.getSheet("Medicaments_exclus");
+            if (sheet == null) {
+                sheet = workbook.getSheetAt(0);
+            }
+
+            int imported = 0;
+            int updated = 0;
+
+            for (int i = 0; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+
+                String classe = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(1));
+                String sousCat = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(2));
+                String exemples = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(3));
+
+                // Ignorer titres, en-têtes et lignes sans marques
+                if (exemples == null || exemples.trim().isEmpty()) continue;
+                if (classe == null || classe.trim().isEmpty()) continue;
+                if (classe.toLowerCase().contains("classe de produits exclus")) continue;
+
+                String motif = classe.trim();
+                String description = (sousCat != null && !sousCat.trim().isEmpty())
+                        ? sousCat.trim()
+                        : "Produit non pris en charge par la CSU";
+
+                for (String brut : exemples.split(",")) {
+                    String nom = brut.trim();
+                    if (nom.isEmpty()) continue;
+
+                    Medicament med = medicamentRepository.findByNomIgnoreCase(nom).orElse(null);
+                    if (med != null) {
+                        med.setStatut(StatutMedicament.EXCLU);
+                        med.setMotif(motif);
+                        med.setDescription(description);
+                        med.setClasseTherapeutique(classe.trim());
+                        med.setActif(true);
+                        med.setUpdatedAt(LocalDateTime.now());
+                        medicamentRepository.save(med);
+                        updated++;
+                    } else {
+                        Medicament newMed = Medicament.builder()
+                                .code("EXC-" + System.currentTimeMillis() + "-" + (imported + updated))
+                                .nom(nom)
+                                .classeTherapeutique(classe.trim())
+                                .statut(StatutMedicament.EXCLU)
+                                .motif(motif)
+                                .description(description)
+                                .actif(true)
+                                .createdAt(LocalDateTime.now())
+                                .updatedAt(LocalDateTime.now())
+                                .build();
+                        medicamentRepository.save(newMed);
+                        imported++;
+                    }
+                }
+            }
+            log.info("Importation exclusions terminée : {} nouveaux, {} mis à jour", imported, updated);
+        } catch (Exception e) {
+            log.error("Erreur lors de l'importation des exclusions", e);
             throw new RuntimeException("Erreur lors de l'importation du fichier Excel: " + e.getMessage(), e);
         }
     }

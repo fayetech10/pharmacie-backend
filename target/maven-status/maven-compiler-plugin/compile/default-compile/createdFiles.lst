@@ -1,4 +1,7 @@
+com\csu\pharmacie\utils\ExcelUtils$1.class
 com\csu\pharmacie\exception\ConflictException.class
+com\csu\pharmacie\service\FactureService$1.class
 com\csu\pharmacie\exception\ForbiddenException.class
 com\csu\pharmacie\exception\ResourceNotFoundException.class
+com\csu\pharmacie\dto\PharmacieImportResult.class
 com\csu\pharmacie\exception\BusinessException.class
