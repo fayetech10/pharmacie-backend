@@ -38,13 +38,17 @@ public class SecurityConfig {
                 .cors(cors -> cors.configure(http))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
+                        // Seule la connexion est publique (PAS l'inscription : voir ci-dessous)
+                        .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers(
-                                "/api/auth/**",
                                 // Documentation OpenAPI / Swagger (le chemin du spec est /api-docs, cf. application.yml)
                                 "/api-docs/**", "/api-docs.yaml",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**", "/swagger-ui.html"
                         ).permitAll()
+                        // Création de comptes : réservée à l'Administrateur (empêche l'escalade de privilèges)
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register").hasRole("ADMIN")
+                        .requestMatchers("/api/users/**").hasRole("ADMIN")
                         // Gestion des pharmacies : réservée au Service Régional et à l'Admin
                         // (le Service Central peut consulter via GET mais pas créer/modifier/supprimer)
                         .requestMatchers(HttpMethod.POST, "/api/pharmacies/**").hasAnyRole("SERVICE_REGIONAL", "ADMIN")

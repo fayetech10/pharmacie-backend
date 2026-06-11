@@ -4,9 +4,10 @@ server:
 spring:
   data:
     mongodb:
-      # En production, fournir l'URI via la variable d'environnement SPRING_DATA_MONGODB_URI.
-      # Le défaut ci-dessous pointe vers une instance MongoDB locale (dev).
-      uri: ${SPRING_DATA_MONGODB_URI:mongodb+srv://sencsu94_db_user:YST1cZ8ZOp0FbHte@cluster0.qvqae2u.mongodb.net/pharmacie_csu}
+      # L'URI (avec identifiants) DOIT être fournie via la variable d'environnement
+      # SPRING_DATA_MONGODB_URI en production. Le défaut ci-dessous ne sert qu'au
+      # développement local et ne contient AUCUN identifiant.
+      uri: ${SPRING_DATA_MONGODB_URI}
   servlet:
     multipart:
       enabled: true
@@ -17,9 +18,10 @@ spring:
 
 app:
   jwt:
-    # OBLIGATOIRE en production : définir APP_JWT_SECRET (>= 32 caractères).
-    # Le défaut n'est destiné qu'au développement local.
-    secret: ${APP_JWT_SECRET:devLocalSecretChangeMeInProduction0123456789}
+    # OBLIGATOIRE : définir APP_JWT_SECRET (>= 32 caractères aléatoires).
+    # Aucune valeur par défaut : le démarrage échoue volontairement si la variable
+    # n'est pas fournie (voir JwtUtil), pour éviter tout secret prévisible.
+    secret: ${APP_JWT_SECRET}
     expiration: ${APP_JWT_EXPIRATION:86400000}
 
 cors:

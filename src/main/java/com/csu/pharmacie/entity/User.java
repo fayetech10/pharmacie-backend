@@ -1,5 +1,6 @@
 package com.csu.pharmacie.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,6 +21,8 @@ public class User {
     private String nom;
     private String prenom;
     private String email;
+    // Le hash ne doit jamais être renvoyé dans les réponses JSON (mais reste accepté en entrée)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
     private Role role;
     private String pharmacieId;
