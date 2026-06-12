@@ -7,7 +7,7 @@ spring:
       # L'URI (avec identifiants) DOIT être fournie via la variable d'environnement
       # SPRING_DATA_MONGODB_URI en production. Le défaut ci-dessous ne sert qu'au
       # développement local et ne contient AUCUN identifiant.
-      uri: ${SPRING_DATA_MONGODB_URI}
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb+srv://sencsu94_db_user:4l0C0PMuaC0HorWY@cluster0.qvqae2u.mongodb.net/pharmacie_csu}
   servlet:
     multipart:
       enabled: true
@@ -21,13 +21,13 @@ app:
     # OBLIGATOIRE : définir APP_JWT_SECRET (>= 32 caractères aléatoires).
     # Aucune valeur par défaut : le démarrage échoue volontairement si la variable
     # n'est pas fournie (voir JwtUtil), pour éviter tout secret prévisible.
-    secret: ${APP_JWT_SECRET}
+    secret: ${APP_JWT_SECRET:OI90JICKOIJIRSJIJSIJCSIJCRSJVJIVRIJVJSRJRIVJISVIJ}
     expiration: ${APP_JWT_EXPIRATION:86400000}
 
 cors:
   # Origines autorisées (séparées par des virgules). Surcharger via CORS_ALLOWED_ORIGINS en prod.
   # Les motifs wildcard sont acceptés (ex: https://*.vercel.app pour les previews Vercel).
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://localhost,https://pharmacie-omega.vercel.app,https://*.vercel.app}
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
 
 springdoc:
   api-docs:

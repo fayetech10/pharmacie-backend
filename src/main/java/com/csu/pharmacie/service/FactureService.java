@@ -190,6 +190,9 @@ public class FactureService {
             newLigne.setQuantite(ligneDto.getQuantite());
             newLigne.setPrixUnitaire(ligneDto.getPrixUnitaire());
             newLigne.setMontant(ligneDto.getQuantite() * ligneDto.getPrixUnitaire());
+            newLigne.setTicketCaisse(ligneDto.getTicketCaisse());
+            newLigne.setBonCommande(ligneDto.getBonCommande());
+            newLigne.setOrdonnance(ligneDto.getOrdonnance());
 
             facture.getLignes().add(newLigne);
         }
@@ -445,6 +448,9 @@ public class FactureService {
                     .quantite(dto.getQuantite())
                     .prixUnitaire(dto.getPrixUnitaire())
                     .montant(montant)
+                    .ticketCaisse(dto.getTicketCaisse())
+                    .bonCommande(dto.getBonCommande())
+                    .ordonnance(dto.getOrdonnance())
                     .build();
         }).collect(Collectors.toList());
     }

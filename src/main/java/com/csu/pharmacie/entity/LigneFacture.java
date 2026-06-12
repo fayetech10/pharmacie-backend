@@ -21,4 +21,9 @@ public class LigneFacture {
     @Builder.Default
     private StatutLigne statutLigne = StatutLigne.EN_ATTENTE;
     private String motifRejet;
+
+    // Pièces justificatives du dossier patient (images encodées en base64 / data URL)
+    private String ticketCaisse;
+    private String bonCommande;
+    private String ordonnance;
 }

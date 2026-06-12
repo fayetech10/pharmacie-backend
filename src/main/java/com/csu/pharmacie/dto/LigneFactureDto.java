@@ -25,4 +25,9 @@ public class LigneFactureDto {
 
     @Min(value = 0, message = "Le prix unitaire doit être positif")
     private double prixUnitaire;
+
+    // Pièces justificatives du dossier patient (images encodées en base64 / data URL)
+    private String ticketCaisse;
+    private String bonCommande;
+    private String ordonnance;
 }
