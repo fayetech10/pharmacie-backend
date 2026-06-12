@@ -1,7 +1,6 @@
 package com.csu.pharmacie.controller;
 
 import com.csu.pharmacie.dto.FactureRequest;
-import com.csu.pharmacie.dto.LigneDecisionRequest;
 import com.csu.pharmacie.dto.LigneFactureDto;
 import com.csu.pharmacie.dto.ValidationRequest;
 import com.csu.pharmacie.entity.Facture;
@@ -75,21 +74,14 @@ public class FactureController {
         return ResponseEntity.ok(factureService.envoyerFacture(id));
     }
 
-    @PostMapping("/{id}/verifier")
-    public ResponseEntity<Facture> verifierFacture(@PathVariable String id) {
-        return ResponseEntity.ok(factureService.verifierFacture(id));
+    @PostMapping("/{id}/payer")
+    public ResponseEntity<Facture> payerFacture(@PathVariable String id) {
+        return ResponseEntity.ok(factureService.payerFacture(id));
     }
 
-    @PostMapping("/{id}/conformer")
-    public ResponseEntity<Facture> conformerFacture(@PathVariable String id) {
-        return ResponseEntity.ok(factureService.conformerFacture(id));
-    }
-
-    @PostMapping("/{id}/lignes/{index}/decision")
-    public ResponseEntity<Facture> deciderLigne(@PathVariable String id,
-                                                @PathVariable int index,
-                                                @RequestBody LigneDecisionRequest request) {
-        return ResponseEntity.ok(factureService.deciderLigne(id, index, request));
+    @PostMapping("/{id}/renvoyer-pharmacie")
+    public ResponseEntity<Facture> renvoyerAPharmacie(@PathVariable String id) {
+        return ResponseEntity.ok(factureService.renvoyerAPharmacie(id));
     }
 
     @PostMapping("/{id}/valider")
@@ -100,11 +92,6 @@ public class FactureController {
     @PostMapping("/{id}/rejeter")
     public ResponseEntity<Facture> rejeterFacture(@PathVariable String id, @Valid @RequestBody ValidationRequest request) {
         return ResponseEntity.ok(factureService.rejeterFacture(id, request));
-    }
-
-    @PostMapping("/{id}/renvoyer-correction")
-    public ResponseEntity<Facture> renvoyerPourCorrection(@PathVariable String id) {
-        return ResponseEntity.ok(factureService.renvoyerPourCorrection(id));
     }
 
     @GetMapping("/export/excel")
@@ -129,10 +116,24 @@ public class FactureController {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
         headers.setContentDispositionFormData("attachment", "Facture_" + facture.getMois() + "_" + facture.getAnnee() + ".xlsx");
-        
+
         return ResponseEntity.ok()
                 .headers(headers)
                 .body(excelBytes);
+    }
+
+    @GetMapping("/{id}/export/pdf")
+    public ResponseEntity<byte[]> exportFacturePdf(@PathVariable String id) {
+        Facture facture = factureService.getFactureById(id);
+        byte[] pdfBytes = exportService.exportFacturePdf(facture);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDispositionFormData("attachment", "Facture_" + facture.getMois() + "_" + facture.getAnnee() + ".pdf");
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(pdfBytes);
     }
 
     @GetMapping("/export/pdf")

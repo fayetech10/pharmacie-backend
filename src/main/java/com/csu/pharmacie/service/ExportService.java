@@ -274,4 +274,116 @@ public class ExportService {
             throw new RuntimeException(e);
         }
     }
+
+    /** PDF détaillé d'une facture (en-tête + lignes + total), calqué sur l'export Excel par facture. */
+    public byte[] exportFacturePdf(Facture facture) {
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            String pharmacieNom = facture.getPharmacieNom();
+            String localite = "";
+            String codePharmacie = "PH";
+            Pharmacie pharmacie = pharmacieRepository.findById(facture.getPharmacieId()).orElse(null);
+            if (pharmacie != null) {
+                pharmacieNom = pharmacie.getNom();
+                codePharmacie = pharmacie.getCode();
+                Region region = regionRepository.findById(pharmacie.getRegionId()).orElse(null);
+                if (region != null) {
+                    localite = region.getNom();
+                }
+            }
+
+            java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            String dateFacture = facture.getCreatedAt() != null
+                    ? facture.getCreatedAt().format(formatter)
+                    : java.time.LocalDate.now().format(formatter);
+            String numFacture = String.format("F-%s-%d-%02d", codePharmacie, facture.getAnnee(), facture.getMois());
+
+            Document document = new Document(com.itextpdf.text.PageSize.A4.rotate(), 28, 28, 28, 28);
+            PdfWriter.getInstance(document, out);
+            document.open();
+
+            com.itextpdf.text.BaseColor green = new com.itextpdf.text.BaseColor(4, 120, 87);
+            com.itextpdf.text.Font titleFont = new com.itextpdf.text.Font(com.itextpdf.text.Font.FontFamily.HELVETICA, 16, com.itextpdf.text.Font.BOLD, green);
+            com.itextpdf.text.Font labelFont = new com.itextpdf.text.Font(com.itextpdf.text.Font.FontFamily.HELVETICA, 10, com.itextpdf.text.Font.BOLD);
+            com.itextpdf.text.Font normalFont = new com.itextpdf.text.Font(com.itextpdf.text.Font.FontFamily.HELVETICA, 10);
+            com.itextpdf.text.Font headFont = new com.itextpdf.text.Font(com.itextpdf.text.Font.FontFamily.HELVETICA, 9, com.itextpdf.text.Font.BOLD, com.itextpdf.text.BaseColor.WHITE);
+
+            document.add(new Paragraph("FACTURE MOIS " + getMonthName(facture.getMois()).toUpperCase(), titleFont));
+            document.add(new Paragraph(" "));
+            document.add(new Paragraph("Pharmacie : " + pharmacieNom, normalFont));
+            document.add(new Paragraph("Localité : " + localite, normalFont));
+            document.add(new Paragraph("Période de facturation : " + getMonthName(facture.getMois()) + " " + facture.getAnnee(), normalFont));
+            document.add(new Paragraph("N° de facture : " + numFacture, normalFont));
+            document.add(new Paragraph("Date facturation : " + dateFacture, normalFont));
+            document.add(new Paragraph("Statut : " + facture.getStatut().name(), normalFont));
+            document.add(new Paragraph(" "));
+
+            String[] headers = {
+                "N° patient", "Prénom/Nom", "Matricule", "Médicament",
+                "PU (FCFA)", "Qté", "Montant", "Part bénéf. 50%", "Part SEN-CSU 50%"
+            };
+            com.itextpdf.text.pdf.PdfPTable table = new com.itextpdf.text.pdf.PdfPTable(headers.length);
+            table.setWidthPercentage(100);
+            for (String h : headers) {
+                com.itextpdf.text.pdf.PdfPCell cell = new com.itextpdf.text.pdf.PdfPCell(new Paragraph(h, headFont));
+                cell.setBackgroundColor(green);
+                cell.setHorizontalAlignment(com.itextpdf.text.Element.ALIGN_CENTER);
+                cell.setPadding(4);
+                table.addCell(cell);
+            }
+
+            List<LigneFacture> lignes = facture.getLignes() != null ? facture.getLignes() : new java.util.ArrayList<>();
+            int patientCounter = 1;
+            String lastMat = null, lastNom = null;
+            double sumMontant = 0, sumBenef = 0, sumCsu = 0;
+
+            for (LigneFacture ligne : lignes) {
+                boolean isNewPatient = lastMat == null
+                        || !java.util.Objects.equals(lastMat, ligne.getPatientMatricule())
+                        || !java.util.Objects.equals(lastNom, ligne.getPatientNomPrenom());
+                String num = "", nom = "", mat = "";
+                if (isNewPatient) {
+                    lastMat = ligne.getPatientMatricule();
+                    lastNom = ligne.getPatientNomPrenom();
+                    num = String.format("%04d", patientCounter++);
+                    nom = ligne.getPatientNomPrenom() != null ? ligne.getPatientNomPrenom() : "";
+                    mat = ligne.getPatientMatricule() != null ? ligne.getPatientMatricule() : "";
+                }
+                double total = ligne.getQuantite() * ligne.getPrixUnitaire();
+                sumMontant += total;
+                sumBenef += total * 0.5;
+                sumCsu += total * 0.5;
+
+                table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(num, normalFont)));
+                table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(nom, normalFont)));
+                table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(mat, normalFont)));
+                table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(ligne.getMedicament() != null ? ligne.getMedicament() : "", normalFont)));
+                table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(formatNombre(ligne.getPrixUnitaire()), normalFont)));
+                table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(String.valueOf(ligne.getQuantite()), normalFont)));
+                table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(formatNombre(total), normalFont)));
+                table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(formatNombre(total * 0.5), normalFont)));
+                table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(formatNombre(total * 0.5), normalFont)));
+            }
+
+            com.itextpdf.text.pdf.PdfPCell totalLabel = new com.itextpdf.text.pdf.PdfPCell(new Paragraph("TOTAL", labelFont));
+            totalLabel.setColspan(6);
+            totalLabel.setHorizontalAlignment(com.itextpdf.text.Element.ALIGN_RIGHT);
+            totalLabel.setPadding(4);
+            table.addCell(totalLabel);
+            table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(formatNombre(sumMontant), labelFont)));
+            table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(formatNombre(sumBenef), labelFont)));
+            table.addCell(new com.itextpdf.text.pdf.PdfPCell(new Paragraph(formatNombre(sumCsu), labelFont)));
+
+            document.add(table);
+            document.close();
+            return out.toByteArray();
+        } catch (DocumentException e) {
+            throw new RuntimeException("Erreur lors de l'export PDF de la facture", e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private String formatNombre(double v) {
+        return String.format("%,.0f", v);
+    }
 }

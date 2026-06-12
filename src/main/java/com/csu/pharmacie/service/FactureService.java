@@ -210,7 +210,7 @@ public class FactureService {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
 
-        if (facture.getStatut() != StatutFacture.BROUILLON && facture.getStatut() != StatutFacture.A_CORRIGER) {
+        if (facture.getStatut() != StatutFacture.BROUILLON && facture.getStatut() != StatutFacture.REJETEE_SR) {
             throw new BusinessException("Impossible de modifier une facture déjà envoyée");
         }
 
@@ -231,17 +231,17 @@ public class FactureService {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
 
-        boolean correction = facture.getStatut() == StatutFacture.A_CORRIGER;
+        if (user.getRole() != Role.PHARMACIEN) {
+            throw new ForbiddenException("Seul un pharmacien peut envoyer une facture");
+        }
+
+        // Envoi initial (BROUILLON) ou renvoi après correction (REJETEE_SR).
+        boolean correction = facture.getStatut() == StatutFacture.REJETEE_SR;
         if (facture.getStatut() != StatutFacture.BROUILLON && !correction) {
             throw new BusinessException("La facture n'est pas modifiable pour envoi");
         }
 
-        // Resoumission après correction : on réinitialise les décisions de lignes
-        if (correction && facture.getLignes() != null) {
-            for (LigneFacture ligne : facture.getLignes()) {
-                ligne.setStatutLigne(StatutLigne.EN_ATTENTE);
-                ligne.setMotifRejet(null);
-            }
+        if (correction) {
             facture.setCommentaireRejet(null);
         }
 
@@ -250,153 +250,94 @@ public class FactureService {
         return facture;
     }
 
-    public Facture verifierFacture(String id) {
+    /** Service Central : VALIDEE_NC -> PAYEE. */
+    public Facture payerFacture(String id) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
 
-        if (user.getRole() != Role.SERVICE_REGIONAL) {
-            throw new ForbiddenException("Seul le service régional peut vérifier une facture");
+        if (user.getRole() != Role.SERVICE_CENTRAL) {
+            throw new ForbiddenException("Seul le niveau central peut payer une facture");
         }
-
-        if (facture.getStatut() != StatutFacture.ENVOYEE) {
-            throw new BusinessException("La facture n'est pas au statut envoyée");
+        if (facture.getStatut() != StatutFacture.VALIDEE_NC) {
+            throw new BusinessException("Seules les factures validées par le central peuvent être payées");
         }
-
-        changerStatut(facture, StatutFacture.EN_VERIFICATION, user, "Prise en charge pour vérification");
+        changerStatut(facture, StatutFacture.PAYEE, user, "Facture payée");
         return facture;
     }
 
-    public Facture conformerFacture(String id) {
+    /** Service Régional : REJETEE_NC -> REJETEE_SR (relais du rejet central vers la pharmacie). */
+    public Facture renvoyerAPharmacie(String id) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
 
         if (user.getRole() != Role.SERVICE_REGIONAL) {
-            throw new ForbiddenException("Seul le service régional peut déclarer une facture conforme");
+            throw new ForbiddenException("Seul le service régional peut renvoyer une facture à la pharmacie");
         }
-
-        if (facture.getStatut() != StatutFacture.EN_VERIFICATION) {
-            throw new BusinessException("La facture n'est pas en vérification");
+        if (facture.getStatut() != StatutFacture.REJETEE_NC) {
+            throw new BusinessException("Seules les factures rejetées par le central peuvent être renvoyées à la pharmacie");
         }
-
-        changerStatut(facture, StatutFacture.CONFORME, user, "Facture déclarée conforme");
+        changerStatut(facture, StatutFacture.REJETEE_SR, user,
+                "Rejet du niveau central renvoyé à la pharmacie pour correction");
         return facture;
     }
 
-    public Facture deciderLigne(String id, int index, LigneDecisionRequest request) {
-        Facture facture = getFactureById(id);
-        User user = getCurrentUser();
-
-        if (user.getRole() != Role.SERVICE_REGIONAL) {
-            throw new ForbiddenException("Seul le service régional peut vérifier les lignes");
-        }
-
-        if (facture.getStatut() != StatutFacture.EN_VERIFICATION) {
-            throw new BusinessException("La facture doit être en vérification pour décider des lignes");
-        }
-
-        List<LigneFacture> lignes = facture.getLignes();
-        if (lignes == null || index < 0 || index >= lignes.size()) {
-            throw new BusinessException("Ligne introuvable");
-        }
-
-        LigneFacture ligne = lignes.get(index);
-        if (request.isAccepter()) {
-            ligne.setStatutLigne(StatutLigne.ACCEPTEE);
-            ligne.setMotifRejet(null);
-        } else {
-            if (request.getMotif() == null || request.getMotif().isBlank()) {
-                throw new BusinessException("Le motif est obligatoire pour rejeter une ligne");
-            }
-            ligne.setStatutLigne(StatutLigne.REJETEE);
-            ligne.setMotifRejet(request.getMotif());
-        }
-
-        facture.setUpdatedAt(LocalDateTime.now());
-        return factureRepository.save(facture);
-    }
-
+    /**
+     * Validation consciente du niveau :
+     * - Service Régional : ENVOYEE -> VALIDEE_SR (et transmise au central)
+     * - Service Central  : VALIDEE_SR -> VALIDEE_NC
+     */
     public Facture validerFacture(String id, ValidationRequest request) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
+        String commentaire = request != null ? request.getCommentaire() : null;
+        boolean hasComment = commentaire != null && !commentaire.isBlank();
 
-        if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.SERVICE_CENTRAL) {
+        if (user.getRole() == Role.SERVICE_REGIONAL) {
+            if (facture.getStatut() != StatutFacture.ENVOYEE) {
+                throw new BusinessException("Seules les factures reçues (envoyées) peuvent être validées");
+            }
+            changerStatut(facture, StatutFacture.VALIDEE_SR, user,
+                    hasComment ? commentaire : "Validée et transmise au niveau central");
+        } else if (user.getRole() == Role.SERVICE_CENTRAL) {
+            if (facture.getStatut() != StatutFacture.VALIDEE_SR) {
+                throw new BusinessException("Seules les factures transmises peuvent être validées par le central");
+            }
+            changerStatut(facture, StatutFacture.VALIDEE_NC, user,
+                    hasComment ? commentaire : "Validée par le niveau central");
+        } else {
             throw new ForbiddenException("Accès refusé");
         }
-
-        if (facture.getStatut() != StatutFacture.CONFORME && facture.getStatut() != StatutFacture.EN_VERIFICATION) {
-            throw new BusinessException("Statut invalide pour validation");
-        }
-
-        // Validation partielle : on ne conserve/compte que les lignes non rejetées.
-        // Les lignes laissées EN_ATTENTE sont considérées comme acceptées.
-        List<LigneFacture> lignes = facture.getLignes() != null ? facture.getLignes() : new ArrayList<>();
-        long rejetees = lignes.stream().filter(l -> l.getStatutLigne() == StatutLigne.REJETEE).count();
-        long acceptees = lignes.size() - rejetees;
-
-        if (acceptees == 0) {
-            throw new BusinessException("Toutes les lignes sont rejetées : utilisez le rejet de la facture entière");
-        }
-
-        for (LigneFacture ligne : lignes) {
-            if (ligne.getStatutLigne() == StatutLigne.EN_ATTENTE) {
-                ligne.setStatutLigne(StatutLigne.ACCEPTEE);
-            }
-        }
-
-        double montantTotal = lignes.stream()
-                .filter(l -> l.getStatutLigne() != StatutLigne.REJETEE)
-                .mapToDouble(LigneFacture::getMontant)
-                .sum();
-        facture.setMontantTotal(montantTotal);
-
-        String commentaire = request.getCommentaire();
-        if (rejetees > 0) {
-            commentaire = (commentaire == null || commentaire.isBlank() ? "" : commentaire + " — ")
-                    + acceptees + " ligne(s) acceptée(s), " + rejetees + " rejetée(s)";
-        }
-
-        changerStatut(facture, StatutFacture.VALIDEE, user, commentaire);
         return facture;
     }
 
+    /**
+     * Rejet conscient du niveau :
+     * - Service Régional : ENVOYEE -> REJETEE_SR (renvoyée à la pharmacie)
+     * - Service Central  : VALIDEE_SR -> REJETEE_NC (reçue par le SR)
+     */
     public Facture rejeterFacture(String id, ValidationRequest request) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
-
-        if (user.getRole() != Role.SERVICE_REGIONAL) {
-            throw new ForbiddenException("Seul le service régional peut rejeter une facture");
+        String motif = request != null ? request.getCommentaire() : null;
+        if (motif == null || motif.isBlank()) {
+            throw new BusinessException("Le motif de rejet est obligatoire");
         }
 
-        if (facture.getStatut() != StatutFacture.EN_VERIFICATION) {
-            throw new BusinessException("La facture n'est pas en vérification");
+        if (user.getRole() == Role.SERVICE_REGIONAL) {
+            if (facture.getStatut() != StatutFacture.ENVOYEE) {
+                throw new BusinessException("Seules les factures reçues peuvent être rejetées");
+            }
+            facture.setCommentaireRejet(motif);
+            changerStatut(facture, StatutFacture.REJETEE_SR, user, motif);
+        } else if (user.getRole() == Role.SERVICE_CENTRAL) {
+            if (facture.getStatut() != StatutFacture.VALIDEE_SR) {
+                throw new BusinessException("Seules les factures transmises peuvent être rejetées par le central");
+            }
+            facture.setCommentaireRejet(motif);
+            changerStatut(facture, StatutFacture.REJETEE_NC, user, motif);
+        } else {
+            throw new ForbiddenException("Accès refusé");
         }
-
-        facture.setCommentaireRejet(request.getCommentaire());
-        changerStatut(facture, StatutFacture.REJETEE, user, request.getCommentaire());
-        return facture;
-    }
-
-    public Facture renvoyerPourCorrection(String id) {
-        Facture facture = getFactureById(id);
-        User user = getCurrentUser();
-
-        if (user.getRole() != Role.SERVICE_REGIONAL) {
-            throw new ForbiddenException("Seul le service régional peut renvoyer une facture pour correction");
-        }
-
-        if (facture.getStatut() != StatutFacture.EN_VERIFICATION) {
-            throw new BusinessException("La facture n'est pas en vérification");
-        }
-
-        List<LigneFacture> lignes = facture.getLignes() != null ? facture.getLignes() : new ArrayList<>();
-        long rejetees = lignes.stream().filter(l -> l.getStatutLigne() == StatutLigne.REJETEE).count();
-        if (rejetees == 0) {
-            throw new BusinessException("Aucune ligne rejetée : rejetez au moins une ligne avant de renvoyer pour correction");
-        }
-
-        facture.setCommentaireRejet(rejetees + " ligne(s) à corriger");
-        changerStatut(facture, StatutFacture.A_CORRIGER, user,
-                "Renvoi au pharmacien pour correction de " + rejetees + " ligne(s)");
         return facture;
     }
     
