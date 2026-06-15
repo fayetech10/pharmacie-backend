@@ -17,6 +17,7 @@ C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\ph
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\repository\FactureRepository.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\utils\ExcelUtils.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\dto\FactureRequest.java
+C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\dto\MedicamentStat.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\exception\ForbiddenException.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\service\MedicamentService.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\controller\PharmacieController.java
@@ -50,6 +51,8 @@ C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\ph
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\repository\RegionRepository.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\service\FactureService.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\entity\HistoriqueAction.java
+C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\dto\PharmacieStat.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\dto\LigneFactureDto.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\dto\ValidationRequest.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\entity\Role.java
+C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\dto\RegionStat.java

@@ -7,7 +7,7 @@ spring:
       # L'URI (avec identifiants) DOIT être fournie via la variable d'environnement
       # SPRING_DATA_MONGODB_URI en production. Le défaut ci-dessous ne sert qu'au
       # développement local et ne contient AUCUN identifiant.
-      uri: ${SPRING_DATA_MONGODB_URI}
+      uri: ${SPRING_DATA_MONGODB_URIr}
   servlet:
     multipart:
       enabled: true
@@ -27,7 +27,7 @@ app:
 cors:
   # Origines autorisées (séparées par des virgules). Surcharger via CORS_ALLOWED_ORIGINS en prod.
   # Les motifs wildcard sont acceptés (ex: https://*.vercel.app pour les previews Vercel).
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  allowed-origins: ${CORS_ALLOWED_ORIGINS}
 
 springdoc:
   api-docs:

@@ -26,10 +26,16 @@ public class StatsController {
         return ResponseEntity.ok(statsService.getStatsRegional(regionId));
     }
 
+    @GetMapping("/pharmacie")
+    public ResponseEntity<StatsDto> getStatsPharmacie(@RequestParam String pharmacieId) {
+        return ResponseEntity.ok(statsService.getStatsPharmacie(pharmacieId));
+    }
+
     @GetMapping("/evolution")
     public ResponseEntity<List<MonthData>> getEvolutionMensuelle(
-            @RequestParam(required = false) String regionId, 
+            @RequestParam(required = false) String regionId,
+            @RequestParam(required = false) String pharmacieId,
             @RequestParam int annee) {
-        return ResponseEntity.ok(statsService.getEvolutionMensuelle(regionId, annee));
+        return ResponseEntity.ok(statsService.getEvolutionMensuelle(regionId, pharmacieId, annee));
     }
 }
