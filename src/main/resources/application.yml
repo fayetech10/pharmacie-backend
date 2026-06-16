@@ -7,7 +7,7 @@ spring:
       # L'URI (avec identifiants) DOIT être fournie via la variable d'environnement
       # SPRING_DATA_MONGODB_URI en production. Le défaut ci-dessous ne sert qu'au
       # développement local et ne contient AUCUN identifiant.
-      uri: ${SPRING_DATA_MONGODB_URIr}
+      uri: ${SPRING_DATA_MONGODB_URI}
   servlet:
     multipart:
       enabled: true
