@@ -1,0 +1,53 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Blueprint Render — backend Spring Boot (Docker) connecté à une base PostgreSQL
+# DÉJÀ CRÉÉE sur Render (on ne la recrée donc PAS ici).
+#
+# Ce fichier est à la RACINE du dépôt backend (à côté de pom.xml et Dockerfile).
+#
+# Déploiement :
+#   1. git push de ce dépôt sur GitHub.
+#   2. dashboard.render.com → New → Blueprint → sélectionner ce dépôt.
+#   3. Render lit ce fichier et demande de renseigner les variables marquées
+#      « sync: false » (identifiants de TA base + CORS).  Voir le README de déploiement.
+#
+# ⚠️  IMPORTANT : place ce service dans la MÊME région que ta base PostgreSQL,
+#     sinon l'hôte interne (dpg-xxxx-a) n'est pas joignable.
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: pharmacie-csu-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt          # ← doit correspondre à la région de ta base
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # ── Connexion à TA base PostgreSQL existante ──
+      # Valeurs à copier depuis : Render → ta base → onglet « Info »/« Connect ».
+      # Backend SUR Render → utilise le Hostname INTERNE (dpg-xxxx-a), sans SSL.
+      - key: DB_HOST
+        sync: false            # ex : dpg-abc123xyz-a
+      - key: DB_PORT
+        sync: false            # ex : 5432
+      - key: DB_NAME
+        sync: false            # ex : pharmacie_csu_xxxx
+      - key: DB_USER
+        sync: false            # ex : pharmacie_csu_xxxx_user
+      - key: DB_PASSWORD
+        sync: false            # mot de passe de la base (secret)
+
+      # ── Sécurité ──
+      - key: APP_JWT_SECRET
+        generateValue: true    # généré une fois par Render, puis stable
+      - key: APP_JWT_EXPIRATION
+        value: "86400000"
+
+      # ── CORS : URL du frontend déployé (ex : https://mon-app.vercel.app) ──
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # ── JVM (instance free = 512 Mo) ──
+      - key: JAVA_TOOL_OPTIONS
+        value: "-XX:MaxRAMPercentage=75.0 -XX:+UseSerialGC"

@@ -65,19 +65,26 @@ public class FactureService {
      * plus légères. Les exports (Excel/PDF) continuent d'utiliser {@link #getAllFactures()}.
      */
     public List<Facture> getAllFacturesLight() {
-        User user = getCurrentUser();
+        return stripPieces(getAllFactures());
+    }
 
-        switch (user.getRole()) {
-            case PHARMACIEN:
-                return factureRepository.findByPharmacieIdLight(user.getPharmacieId());
-            case SERVICE_REGIONAL:
-                return factureRepository.findByRegionIdLight(user.getRegionId());
-            case SERVICE_CENTRAL:
-            case ADMIN:
-                return factureRepository.findAllLight();
-            default:
-                return new ArrayList<>();
+    /**
+     * Retire les images base64 des lignes (ticket de caisse, bon de commande, ordonnance),
+     * non affichées dans les vues liste / tableau de bord, pour des réponses bien plus légères.
+     * Les factures viennent d'une lecture (entités détachées hors transaction) : la mutation
+     * reste en mémoire et n'entraîne aucune écriture en base. Le détail d'une facture
+     * (getFactureById) reste complet pour le dossier patient.
+     */
+    private List<Facture> stripPieces(List<Facture> factures) {
+        for (Facture f : factures) {
+            if (f.getLignes() == null) continue;
+            for (LigneFacture l : f.getLignes()) {
+                l.setTicketCaisse(null);
+                l.setBonCommande(null);
+                l.setOrdonnance(null);
+            }
         }
+        return factures;
     }
 
     public Facture getFactureById(String id) {

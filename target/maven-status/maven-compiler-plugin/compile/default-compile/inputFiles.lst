@@ -42,6 +42,7 @@ C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\ph
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\dto\PharmacieImportResult.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\dto\PharmacieRequest.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\config\OpenApiConfig.java
+C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\config\HibernateJsonConfig.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\entity\User.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\security\JwtAuthFilter.java
 C:\Users\hp\Documents\Gestion Pharmacie sen-csu\backend\src\main\java\com\csu\pharmacie\entity\Pharmacie.java

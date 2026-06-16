@@ -2,39 +2,32 @@ package com.csu.pharmacie.repository;
 
 import com.csu.pharmacie.entity.Facture;
 import com.csu.pharmacie.entity.StatutFacture;
-import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface FactureRepository extends MongoRepository<Facture, String> {
+public interface FactureRepository extends JpaRepository<Facture, String> {
     List<Facture> findByPharmacieId(String pharmacieId);
     List<Facture> findByRegionId(String regionId);
     List<Facture> findByStatut(StatutFacture statut);
     List<Facture> findByMoisAndAnnee(int mois, int annee);
     Optional<Facture> findByPharmacieIdAndMoisAndAnnee(String pharmacieId, int mois, int annee);
 
-    @Query("{ 'pharmacieId': ?0, 'statut': 'BROUILLON', $or: [ { 'annee': { $lt: ?2 } }, { 'annee': ?2, 'mois': { $lt: ?1 } } ] }")
-    List<Facture> findRetards(String pharmacieId, int currentMois, int currentAnnee);
+    // Factures encore en brouillon pour des périodes antérieures au mois courant (retards de dépôt).
+    @Query("SELECT f FROM Facture f WHERE f.pharmacieId = :pharmacieId "
+            + "AND f.statut = com.csu.pharmacie.entity.StatutFacture.BROUILLON "
+            + "AND (f.annee < :annee OR (f.annee = :annee AND f.mois < :mois))")
+    List<Facture> findRetards(@Param("pharmacieId") String pharmacieId,
+                              @Param("mois") int currentMois,
+                              @Param("annee") int currentAnnee);
 
-    /*
-     * Variantes « allégées » pour les vues liste / tableau de bord : la projection exclut
-     * les images base64 des lignes (ticket de caisse, bon de commande, ordonnance), qui
-     * pèsent l'essentiel du document mais ne sont pas affichées en liste. Mongo ne les charge
-     * ni ne les transfère → réponses bien plus légères et affichage plus rapide.
-     * Le détail d'une facture (findById) reste complet pour le dossier patient.
-     */
-    String EXCLUDE_PIECES = "{ 'lignes.ticketCaisse': 0, 'lignes.bonCommande': 0, 'lignes.ordonnance': 0 }";
-
-    @Query(value = "{}", fields = EXCLUDE_PIECES)
-    List<Facture> findAllLight();
-
-    @Query(value = "{ 'pharmacieId': ?0 }", fields = EXCLUDE_PIECES)
-    List<Facture> findByPharmacieIdLight(String pharmacieId);
-
-    @Query(value = "{ 'regionId': ?0 }", fields = EXCLUDE_PIECES)
-    List<Facture> findByRegionIdLight(String regionId);
+    // NB : les variantes « allégées » (sans les images base64 des lignes) sont désormais
+    // construites côté service (FactureService.getAllFacturesLight) en retirant les pièces
+    // après lecture — les lignes étant stockées en JSONB, on ne peut pas projeter à l'intérieur
+    // d'un sous-document comme le faisait MongoDB.
 }
