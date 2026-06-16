@@ -8,6 +8,10 @@ spring:
       # SPRING_DATA_MONGODB_URI en production. Le défaut ci-dessous ne sert qu'au
       # développement local et ne contient AUCUN identifiant.
       uri: ${SPRING_DATA_MONGODB_URI}
+      # Crée au démarrage les index déclarés sur les entités (@Indexed / @CompoundIndex).
+      # Sans index, chaque requête (findByEmail à chaque requête authentifiée, listes par
+      # région/pharmacie…) faisait un scan complet de collection.
+      auto-index-creation: true
   servlet:
     multipart:
       enabled: true

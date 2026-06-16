@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
@@ -20,6 +21,8 @@ public class User {
     private String id;
     private String nom;
     private String prenom;
+    // Recherché à chaque requête authentifiée (filtre JWT + getCurrentUser) → index indispensable.
+    @Indexed
     private String email;
     // Le hash ne doit jamais être renvoyé dans les réponses JSON (mais reste accepté en entrée)
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
