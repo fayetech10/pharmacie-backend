@@ -75,7 +75,9 @@ public class DataInitializer implements CommandLineRunner {
     private void initUsersAndPharmacies() {
         Region dakar = regionRepository.findByCode("DK").orElseThrow();
 
-        // Admin
+        // Seul compte créé par défaut : l'administrateur.
+        // Les comptes Service Central / Service Régional / Pharmacien sont ensuite
+        // créés par l'admin via POST /api/auth/register (réservé au rôle ADMIN).
         User admin = User.builder()
                 .nom("Admin")
                 .prenom("Super")
@@ -87,33 +89,6 @@ public class DataInitializer implements CommandLineRunner {
                 .updatedAt(LocalDateTime.now())
                 .build();
         userRepository.save(admin);
-
-        // Service Central
-        User central = User.builder()
-                .nom("Central")
-                .prenom("Service")
-                .email("central@csu.sn")
-                .password(passwordEncoder.encode("password123"))
-                .role(Role.SERVICE_CENTRAL)
-                .actif(true)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        userRepository.save(central);
-
-        // Service Régional
-        User regional = User.builder()
-                .nom("Dakar")
-                .prenom("Service Régional")
-                .email("regional@csu.sn")
-                .password(passwordEncoder.encode("password123"))
-                .role(Role.SERVICE_REGIONAL)
-                .regionId(dakar.getId())
-                .actif(true)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        userRepository.save(regional);
 
         // Pharmacie
         Pharmacie pharmacie = Pharmacie.builder()
