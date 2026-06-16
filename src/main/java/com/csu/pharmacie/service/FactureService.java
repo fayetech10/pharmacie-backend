@@ -45,7 +45,7 @@ public class FactureService {
 
     public List<Facture> getAllFactures() {
         User user = getCurrentUser();
-        
+
         switch (user.getRole()) {
             case PHARMACIEN:
                 return factureRepository.findByPharmacieId(user.getPharmacieId());
@@ -54,6 +54,27 @@ public class FactureService {
             case SERVICE_CENTRAL:
             case ADMIN:
                 return factureRepository.findAll();
+            default:
+                return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Variante allégée de {@link #getAllFactures()} pour les vues liste / tableau de bord :
+     * exclut les images base64 des lignes (non affichées en liste) pour des réponses bien
+     * plus légères. Les exports (Excel/PDF) continuent d'utiliser {@link #getAllFactures()}.
+     */
+    public List<Facture> getAllFacturesLight() {
+        User user = getCurrentUser();
+
+        switch (user.getRole()) {
+            case PHARMACIEN:
+                return factureRepository.findByPharmacieIdLight(user.getPharmacieId());
+            case SERVICE_REGIONAL:
+                return factureRepository.findByRegionIdLight(user.getRegionId());
+            case SERVICE_CENTRAL:
+            case ADMIN:
+                return factureRepository.findAllLight();
             default:
                 return new ArrayList<>();
         }
@@ -340,7 +361,47 @@ public class FactureService {
         }
         return facture;
     }
-    
+
+    /**
+     * Décision ligne par ligne par le Service Régional sur une facture reçue (ENVOYEE).
+     * - accepter == true  : la ligne passe ACCEPTEE (motif effacé).
+     * - accepter == false : la ligne passe REJETEE (motif obligatoire).
+     * Ne change pas le statut global de la facture : la validation/rejet d'ensemble reste
+     * une action distincte (validerFacture / rejeterFacture).
+     */
+    public Facture deciderLigne(String id, int ligneIndex, LigneDecisionRequest request) {
+        Facture facture = getFactureById(id);
+        User user = getCurrentUser();
+
+        if (user.getRole() != Role.SERVICE_REGIONAL) {
+            throw new ForbiddenException("Seul le service régional peut décider d'une ligne");
+        }
+        if (facture.getStatut() != StatutFacture.ENVOYEE) {
+            throw new BusinessException("Seules les factures reçues (envoyées) permettent une décision ligne par ligne");
+        }
+
+        List<LigneFacture> lignes = facture.getLignes();
+        if (lignes == null || ligneIndex < 0 || ligneIndex >= lignes.size()) {
+            throw new ResourceNotFoundException("Ligne de facture introuvable");
+        }
+
+        LigneFacture ligne = lignes.get(ligneIndex);
+        if (request.isAccepter()) {
+            ligne.setStatutLigne(StatutLigne.ACCEPTEE);
+            ligne.setMotifRejet(null);
+        } else {
+            String motif = request.getMotif();
+            if (motif == null || motif.isBlank()) {
+                throw new BusinessException("Le motif est obligatoire pour rejeter une ligne");
+            }
+            ligne.setStatutLigne(StatutLigne.REJETEE);
+            ligne.setMotifRejet(motif.trim());
+        }
+
+        facture.setUpdatedAt(LocalDateTime.now());
+        return factureRepository.save(facture);
+    }
+
     public void deleteFacture(String id) {
         Facture facture = getFactureById(id);
         if (facture.getStatut() != StatutFacture.BROUILLON) {

@@ -15,6 +15,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import static org.springframework.security.web.util.matcher.AntPathRequestMatcher.antMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
@@ -38,22 +39,27 @@ public class SecurityConfig {
                 .cors(cors -> cors.configure(http))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
+                        // API 100% REST : on matche les chemins directement (AntPathRequestMatcher)
+                        // au lieu des MvcRequestMatcher, ce qui évite le lookup HandlerMappingIntrospector
+                        // de Spring MVC à chaque requête (et l'avertissement « Cache miss for REQUEST dispatch »).
                         // Seule la connexion est publique (PAS l'inscription : voir ci-dessous)
-                        .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers(antMatcher("/api/auth/login")).permitAll()
+                        // Endpoint de santé public (cible du keep-alive anti cold-start Render)
+                        .requestMatchers(antMatcher(HttpMethod.GET, "/api/health")).permitAll()
                         .requestMatchers(
                                 // Documentation OpenAPI / Swagger (le chemin du spec est /api-docs, cf. application.yml)
-                                "/api-docs/**", "/api-docs.yaml",
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**", "/swagger-ui.html"
+                                antMatcher("/api-docs/**"), antMatcher("/api-docs.yaml"),
+                                antMatcher("/v3/api-docs/**"),
+                                antMatcher("/swagger-ui/**"), antMatcher("/swagger-ui.html")
                         ).permitAll()
                         // Création de comptes : réservée à l'Administrateur (empêche l'escalade de privilèges)
-                        .requestMatchers(HttpMethod.POST, "/api/auth/register").hasRole("ADMIN")
-                        .requestMatchers("/api/users/**").hasRole("ADMIN")
+                        .requestMatchers(antMatcher(HttpMethod.POST, "/api/auth/register")).hasRole("ADMIN")
+                        .requestMatchers(antMatcher("/api/users/**")).hasRole("ADMIN")
                         // Gestion des pharmacies : réservée au Service Régional et à l'Admin
                         // (le Service Central peut consulter via GET mais pas créer/modifier/supprimer)
-                        .requestMatchers(HttpMethod.POST, "/api/pharmacies/**").hasAnyRole("SERVICE_REGIONAL", "ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/pharmacies/**").hasAnyRole("SERVICE_REGIONAL", "ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/pharmacies/**").hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                        .requestMatchers(antMatcher(HttpMethod.POST, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                        .requestMatchers(antMatcher(HttpMethod.PUT, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                        .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

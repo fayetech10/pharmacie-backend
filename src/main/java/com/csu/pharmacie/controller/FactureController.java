@@ -1,6 +1,7 @@
 package com.csu.pharmacie.controller;
 
 import com.csu.pharmacie.dto.FactureRequest;
+import com.csu.pharmacie.dto.LigneDecisionRequest;
 import com.csu.pharmacie.dto.LigneFactureDto;
 import com.csu.pharmacie.dto.ValidationRequest;
 import com.csu.pharmacie.entity.Facture;
@@ -26,7 +27,8 @@ public class FactureController {
 
     @GetMapping
     public ResponseEntity<List<Facture>> getAllFactures() {
-        return ResponseEntity.ok(factureService.getAllFactures());
+        // Liste allégée (sans les images base64 des lignes) : réponse beaucoup plus légère.
+        return ResponseEntity.ok(factureService.getAllFacturesLight());
     }
 
     @GetMapping("/{id}")
@@ -92,6 +94,13 @@ public class FactureController {
     @PostMapping("/{id}/rejeter")
     public ResponseEntity<Facture> rejeterFacture(@PathVariable String id, @Valid @RequestBody ValidationRequest request) {
         return ResponseEntity.ok(factureService.rejeterFacture(id, request));
+    }
+
+    @PostMapping("/{id}/lignes/{ligneIndex}/decider")
+    public ResponseEntity<Facture> deciderLigne(@PathVariable String id,
+                                                @PathVariable int ligneIndex,
+                                                @RequestBody LigneDecisionRequest request) {
+        return ResponseEntity.ok(factureService.deciderLigne(id, ligneIndex, request));
     }
 
     @GetMapping("/export/excel")
