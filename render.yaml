@@ -1,18 +1,24 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Blueprint Render — backend Spring Boot (Docker) connecté à une base PostgreSQL
-# DÉJÀ CRÉÉE sur Render (on ne la recrée donc PAS ici).
+# Blueprint Render — backend Spring Boot (Docker) + base PostgreSQL gérée par Render.
 #
 # Ce fichier est à la RACINE du dépôt backend (à côté de pom.xml et Dockerfile).
 #
-# Déploiement :
+# Déploiement « zéro config » :
 #   1. git push de ce dépôt sur GitHub.
-#   2. dashboard.render.com → New → Blueprint → sélectionner ce dépôt.
-#   3. Render lit ce fichier et demande de renseigner les variables marquées
-#      « sync: false » (identifiants de TA base + CORS).  Voir le README de déploiement.
+#   2. dashboard.render.com → New + → Blueprint → sélectionner ce dépôt.
+#   3. Render CRÉE la base PostgreSQL puis le service web, et câble automatiquement
+#      les variables DB_* depuis la base (rien à recopier).
+#   4. Seule chose à saisir : CORS_ALLOWED_ORIGINS (URL du frontend).
 #
-# ⚠️  IMPORTANT : place ce service dans la MÊME région que ta base PostgreSQL,
-#     sinon l'hôte interne (dpg-xxxx-a) n'est pas joignable.
+# ⚠️  La base et le service sont dans la MÊME région (frankfurt) → l'hôte interne
+#     est joignable et la connexion ne nécessite pas de SSL.
 # ──────────────────────────────────────────────────────────────────────────────
+
+databases:
+  - name: pharmacie-csu-db
+    databaseName: pharmacie_csu
+    plan: free
+    region: frankfurt
 
 services:
   - type: web
@@ -20,23 +26,31 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    region: frankfurt          # ← doit correspondre à la région de ta base
+    region: frankfurt          # ← identique à la région de la base ci-dessus
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      # ── Connexion à TA base PostgreSQL existante ──
-      # Valeurs à copier depuis : Render → ta base → onglet « Info »/« Connect ».
-      # Backend SUR Render → utilise le Hostname INTERNE (dpg-xxxx-a), sans SSL.
+      # ── Connexion PostgreSQL : injectée automatiquement depuis la base ci-dessus ──
       - key: DB_HOST
-        sync: false            # ex : dpg-abc123xyz-a
+        fromDatabase:
+          name: pharmacie-csu-db
+          property: host
       - key: DB_PORT
-        sync: false            # ex : 5432
+        fromDatabase:
+          name: pharmacie-csu-db
+          property: port
       - key: DB_NAME
-        sync: false            # ex : pharmacie_csu_xxxx
+        fromDatabase:
+          name: pharmacie-csu-db
+          property: database
       - key: DB_USER
-        sync: false            # ex : pharmacie_csu_xxxx_user
+        fromDatabase:
+          name: pharmacie-csu-db
+          property: user
       - key: DB_PASSWORD
-        sync: false            # mot de passe de la base (secret)
+        fromDatabase:
+          name: pharmacie-csu-db
+          property: password
 
       # ── Sécurité ──
       - key: APP_JWT_SECRET
