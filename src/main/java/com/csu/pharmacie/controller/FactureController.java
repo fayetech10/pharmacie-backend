@@ -173,4 +173,23 @@ public class FactureController {
             return ResponseEntity.badRequest().body(error);
         }
     }
+
+    /**
+     * Réimport d'une facture corrigée (format Excel détaillé) : remplace les lignes
+     * de la facture ciblée. Réservé au Service Régional / Central (et Admin).
+     */
+    @PostMapping("/{id}/import")
+    public ResponseEntity<?> importFactureExcel(@PathVariable String id, @RequestParam("file") MultipartFile file) {
+        try {
+            Facture facture = factureService.importerFactureExcel(id, file.getInputStream());
+            return ResponseEntity.ok(facture);
+        } catch (Exception e) {
+            java.util.Map<String, String> error = new java.util.HashMap<>();
+            error.put("message", e.getMessage() != null ? e.getMessage() : "Erreur lors de l'importation");
+            if (e.getCause() != null) {
+                error.put("cause", e.getCause().getMessage());
+            }
+            return ResponseEntity.badRequest().body(error);
+        }
+    }
 }

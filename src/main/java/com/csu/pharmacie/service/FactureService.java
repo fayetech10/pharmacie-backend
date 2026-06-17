@@ -21,7 +21,9 @@ import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -494,6 +496,147 @@ public class FactureService {
             }
         } catch (Exception e) {
             throw new RuntimeException("Erreur lors de l'importation du fichier Excel", e);
+        }
+    }
+
+    /**
+     * Réimporte une facture corrigée au format Excel détaillé (celui produit par
+     * {@code ExportService.exportFactureExcel}) : remplace l'intégralité des lignes
+     * de la facture par celles du fichier, puis recalcule le montant total.
+     *
+     * <p>Réservé au Service Régional / Central (et Admin) : typiquement après
+     * correction hors-ligne des quantités/prix. L'export Excel ne contient ni les
+     * pièces justificatives ni le code produit : on les restaure depuis les lignes
+     * d'origine en rapprochant par (matricule + médicament).</p>
+     */
+    public Facture importerFactureExcel(String id, InputStream is) {
+        User user = getCurrentUser();
+        if (user.getRole() != Role.SERVICE_REGIONAL
+                && user.getRole() != Role.SERVICE_CENTRAL
+                && user.getRole() != Role.ADMIN) {
+            throw new ForbiddenException("Accès refusé pour l'importation");
+        }
+
+        Facture facture = getFactureById(id);
+        if (facture.getStatut() == StatutFacture.PAYEE) {
+            throw new BusinessException("Impossible de modifier une facture déjà payée");
+        }
+
+        // Index des lignes existantes pour préserver pièces justificatives et code produit.
+        Map<String, LigneFacture> anciennesParCle = new HashMap<>();
+        if (facture.getLignes() != null) {
+            for (LigneFacture l : facture.getLignes()) {
+                anciennesParCle.putIfAbsent(cleLigne(l.getPatientMatricule(), l.getMedicament()), l);
+            }
+        }
+
+        List<LigneFacture> nouvellesLignes = new ArrayList<>();
+        try (Workbook workbook = new XSSFWorkbook(is)) {
+            Sheet sheet = workbook.getSheetAt(0);
+
+            // Localise la ligne d'en-tête (colonne « Medicament ») pour rester robuste
+            // aux variations de mise en page ; à défaut, on retombe sur l'index connu (8).
+            int headerRowIdx = -1;
+            for (int i = 0; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+                String c4 = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(4));
+                if (c4 != null && c4.toLowerCase().contains("medicament")) {
+                    headerRowIdx = i;
+                    break;
+                }
+            }
+            if (headerRowIdx < 0) headerRowIdx = 8;
+
+            // Le nom/matricule patient n'est renseigné que sur la 1ʳᵉ ligne d'un patient :
+            // on le reporte sur les lignes suivantes (cellules laissées vides à l'export).
+            String currentNom = null;
+            String currentMatricule = null;
+
+            for (int i = headerRowIdx + 1; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+
+                String col0 = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(0));
+                if (col0 != null && col0.trim().equalsIgnoreCase("TOTAL")) break;
+
+                final String medicament = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(4));
+                if (medicament == null || medicament.trim().isEmpty()) continue;
+                final String medNom = medicament.trim();
+
+                String nom = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(2));
+                String matricule = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(3));
+                if (nom != null && !nom.trim().isEmpty()) currentNom = nom.trim();
+                if (matricule != null && !matricule.trim().isEmpty()) currentMatricule = matricule.trim();
+
+                double prixUnitaire = parseNombre(com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(5)));
+                int quantite = (int) Math.round(parseNombre(com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(6))));
+                if (quantite <= 0) quantite = 1;
+
+                // Refus des médicaments exclus, comme à la saisie pharmacie.
+                medicamentRepository.findByNomIgnoreCase(medNom).ifPresent(med -> {
+                    if (med.getStatut() == StatutMedicament.EXCLU) {
+                        throw new BusinessException("Le médicament " + medNom + " est exclu et ne peut pas être facturé.");
+                    }
+                });
+
+                LigneFacture ancienne = anciennesParCle.get(cleLigne(currentMatricule, medNom));
+                String codeProduit = ancienne != null ? ancienne.getCodeProduit() : null;
+                if (codeProduit == null) {
+                    codeProduit = medicamentRepository.findByNomIgnoreCase(medNom)
+                            .map(Medicament::getCode).orElse(null);
+                }
+
+                LigneFacture.LigneFactureBuilder b = LigneFacture.builder()
+                        .patientNomPrenom(currentNom)
+                        .patientMatricule(currentMatricule)
+                        .medicament(medNom)
+                        .codeProduit(codeProduit)
+                        .quantite(quantite)
+                        .prixUnitaire(prixUnitaire)
+                        .montant(quantite * prixUnitaire);
+
+                // Conserve les pièces justificatives de la ligne d'origine si retrouvée.
+                if (ancienne != null) {
+                    b.ticketCaisse(ancienne.getTicketCaisse())
+                     .bonCommande(ancienne.getBonCommande())
+                     .ordonnance(ancienne.getOrdonnance());
+                }
+
+                nouvellesLignes.add(b.build());
+            }
+        } catch (BusinessException | ForbiddenException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Erreur lors de l'importation du fichier Excel", e);
+        }
+
+        if (nouvellesLignes.isEmpty()) {
+            throw new BusinessException("Aucune ligne valide trouvée dans le fichier importé");
+        }
+
+        double montantTotal = nouvellesLignes.stream().mapToDouble(LigneFacture::getMontant).sum();
+        facture.setLignes(nouvellesLignes);
+        facture.setMontantTotal(montantTotal);
+        facture.setUpdatedAt(LocalDateTime.now());
+        ajouterHistorique(facture, user, facture.getStatut(),
+                "Lignes corrigées via import Excel (" + user.getRole() + ")");
+        return factureRepository.save(facture);
+    }
+
+    /** Clé de rapprochement d'une ligne entre l'ancienne et la nouvelle version. */
+    private String cleLigne(String matricule, String medicament) {
+        return (matricule == null ? "" : matricule.trim().toLowerCase())
+                + "|" + (medicament == null ? "" : medicament.trim().toLowerCase());
+    }
+
+    /** Parse une cellule numérique tolérante (espaces, virgule décimale) ; 0 si invalide. */
+    private double parseNombre(String s) {
+        if (s == null) return 0;
+        try {
+            return Double.parseDouble(s.trim().replace(" ", "").replace(",", "."));
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 }
