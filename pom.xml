@@ -26,6 +26,13 @@
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
     </dependency>
+    <!-- Base embarquée pour le développement local (profil "local"), sans PostgreSQL ni Docker.
+         N'est utilisée que lorsque la datasource pointe vers H2 (voir application-local.yml). -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>runtime</scope>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-security</artifactId>

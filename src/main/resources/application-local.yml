@@ -1,0 +1,27 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Profil de DÉVELOPPEMENT LOCAL : base H2 embarquée (fichier), sans PostgreSQL ni Docker.
+#
+# Activation :
+#   PowerShell : $env:SPRING_PROFILES_ACTIVE="local"; mvn spring-boot:run
+#   ou         : mvn spring-boot:run "-Dspring-boot.run.profiles=local"
+#
+# La base est persistée dans backend/.h2data/ (conservée entre les redémarrages).
+# Le DataInitializer crée le compte admin par défaut au premier démarrage.
+# ─────────────────────────────────────────────────────────────────────────────
+spring:
+  datasource:
+    # H2 en fichier. Le paramètre INIT déclare un domaine "JSONB" aliasé sur JSON :
+    # ainsi le DDL Hibernate (colonnes @Column(columnDefinition = "jsonb")) fonctionne
+    # tel quel sur H2, sans modifier les entités partagées avec la production PostgreSQL.
+    url: "jdbc:h2:file:./.h2data/pharmacie_csu;DB_CLOSE_DELAY=-1;INIT=CREATE DOMAIN IF NOT EXISTS JSONB AS JSON"
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    # Le dialecte H2 est détecté automatiquement depuis la connexion (inutile de le forcer).
+    hibernate:
+      ddl-auto: update
+  # Pas d'initialisation par script SQL (le schéma vient d'Hibernate, les données du DataInitializer).
+  sql:
+    init:
+      mode: never

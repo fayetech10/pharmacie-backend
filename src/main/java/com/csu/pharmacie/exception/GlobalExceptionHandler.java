@@ -17,6 +17,8 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     private ResponseEntity<Map<String, Object>> build(HttpStatus status, String message) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
@@ -70,6 +72,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
+        // Trace complète côté serveur (les erreurs 500 inattendues étaient jusqu'ici avalées en silence).
+        log.error("Erreur interne non gérée", ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Une erreur interne est survenue");
     }
 }
