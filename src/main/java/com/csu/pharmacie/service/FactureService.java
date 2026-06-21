@@ -16,6 +16,7 @@ import com.csu.pharmacie.repository.MedicamentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.InputStream;
 import java.time.LocalDate;
@@ -95,17 +96,18 @@ public class FactureService {
                 
         User user = getCurrentUser();
         
-        if (user.getRole() == Role.PHARMACIEN && !facture.getPharmacieId().equals(user.getPharmacieId())) {
+        if (user.getRole() == Role.PHARMACIEN && !java.util.Objects.equals(facture.getPharmacieId(), user.getPharmacieId())) {
             throw new ForbiddenException("Accès refusé");
         }
         
-        if (user.getRole() == Role.SERVICE_REGIONAL && !facture.getRegionId().equals(user.getRegionId())) {
+        if (user.getRole() == Role.SERVICE_REGIONAL && !java.util.Objects.equals(facture.getRegionId(), user.getRegionId())) {
             throw new ForbiddenException("Accès refusé");
         }
         
         return facture;
     }
 
+    @Transactional
     public Facture createFacture(FactureRequest request) {
         User user = getCurrentUser();
         
@@ -166,6 +168,7 @@ public class FactureService {
         return factureRepository.findRetards(user.getPharmacieId(), now.getMonthValue(), now.getYear());
     }
 
+    @Transactional
     public Facture addLignesToCurrent(List<LigneFactureDto> lignesDto) {
         User user = getCurrentUser();
         if (user.getRole() != Role.PHARMACIEN) {
@@ -236,6 +239,7 @@ public class FactureService {
         return factureRepository.save(facture);
     }
 
+    @Transactional
     public Facture updateFacture(String id, FactureRequest request) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
@@ -257,6 +261,7 @@ public class FactureService {
         return factureRepository.save(facture);
     }
 
+    @Transactional
     public Facture envoyerFacture(String id) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
@@ -281,6 +286,7 @@ public class FactureService {
     }
 
     /** Service Central : VALIDEE_NC -> PAYEE. */
+    @Transactional
     public Facture payerFacture(String id) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
@@ -296,6 +302,7 @@ public class FactureService {
     }
 
     /** Service Régional : REJETEE_NC -> REJETEE_SR (relais du rejet central vers la pharmacie). */
+    @Transactional
     public Facture renvoyerAPharmacie(String id) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
@@ -312,10 +319,33 @@ public class FactureService {
     }
 
     /**
+     * Service Régional : REJETEE_NC -> VALIDEE_SR (renvoi direct au central après son rejet).
+     * Permet au service régional de retransmettre la facture au niveau central pour réexamen,
+     * sans repasser par la pharmacie. Elle réapparaît alors dans les « Factures reçues » du central.
+     */
+    @Transactional
+    public Facture renvoyerAuCentral(String id) {
+        Facture facture = getFactureById(id);
+        User user = getCurrentUser();
+
+        if (user.getRole() != Role.SERVICE_REGIONAL) {
+            throw new ForbiddenException("Seul le service régional peut renvoyer une facture au central");
+        }
+        if (facture.getStatut() != StatutFacture.REJETEE_NC) {
+            throw new BusinessException("Seules les factures rejetées par le central peuvent être renvoyées au central");
+        }
+        facture.setCommentaireRejet(null);
+        changerStatut(facture, StatutFacture.VALIDEE_SR, user,
+                "Facture renvoyée au niveau central pour réexamen");
+        return facture;
+    }
+
+    /**
      * Validation consciente du niveau :
      * - Service Régional : ENVOYEE -> VALIDEE_SR (et transmise au central)
      * - Service Central  : VALIDEE_SR -> VALIDEE_NC
      */
+    @Transactional
     public Facture validerFacture(String id, ValidationRequest request) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
@@ -345,6 +375,7 @@ public class FactureService {
      * - Service Régional : ENVOYEE -> REJETEE_SR (renvoyée à la pharmacie)
      * - Service Central  : VALIDEE_SR -> REJETEE_NC (reçue par le SR)
      */
+    @Transactional
     public Facture rejeterFacture(String id, ValidationRequest request) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
@@ -378,6 +409,7 @@ public class FactureService {
      * Ne change pas le statut global de la facture : la validation/rejet d'ensemble reste
      * une action distincte (validerFacture / rejeterFacture).
      */
+    @Transactional
     public Facture deciderLigne(String id, int ligneIndex, LigneDecisionRequest request) {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
@@ -411,6 +443,7 @@ public class FactureService {
         return factureRepository.save(facture);
     }
 
+    @Transactional
     public void deleteFacture(String id) {
         Facture facture = getFactureById(id);
         if (facture.getStatut() != StatutFacture.BROUILLON) {
@@ -466,6 +499,7 @@ public class FactureService {
         }).collect(Collectors.toList());
     }
 
+    @Transactional
     public void importerExcel(InputStream is) {
         User user = getCurrentUser();
         if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.SERVICE_CENTRAL && user.getRole() != Role.ADMIN) {
@@ -509,6 +543,7 @@ public class FactureService {
      * pièces justificatives ni le code produit : on les restaure depuis les lignes
      * d'origine en rapprochant par (matricule + médicament).</p>
      */
+    @Transactional
     public Facture importerFactureExcel(String id, InputStream is) {
         User user = getCurrentUser();
         if (user.getRole() != Role.SERVICE_REGIONAL

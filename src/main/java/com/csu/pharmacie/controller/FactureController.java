@@ -86,6 +86,11 @@ public class FactureController {
         return ResponseEntity.ok(factureService.renvoyerAPharmacie(id));
     }
 
+    @PostMapping("/{id}/renvoyer-central")
+    public ResponseEntity<Facture> renvoyerAuCentral(@PathVariable String id) {
+        return ResponseEntity.ok(factureService.renvoyerAuCentral(id));
+    }
+
     @PostMapping("/{id}/valider")
     public ResponseEntity<Facture> validerFacture(@PathVariable String id, @Valid @RequestBody ValidationRequest request) {
         return ResponseEntity.ok(factureService.validerFacture(id, request));
