@@ -60,6 +60,9 @@ public class SecurityConfig {
                         .requestMatchers(antMatcher(HttpMethod.POST, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
                         .requestMatchers(antMatcher(HttpMethod.PUT, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
                         .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                        // Bases (traité / immatriculé) : import réservé au Service Régional
+                        // (la restriction stricte à la région de Thiès est vérifiée côté service).
+                        .requestMatchers(antMatcher(HttpMethod.POST, "/api/bases/**")).hasRole("SERVICE_REGIONAL")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
