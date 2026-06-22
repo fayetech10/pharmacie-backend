@@ -5,6 +5,7 @@ com\csu\pharmacie\controller\FactureController.class
 com\csu\pharmacie\entity\Medicament$MedicamentBuilder.class
 com\csu\pharmacie\controller\MedicamentController.class
 com\csu\pharmacie\security\SecurityConfig.class
+com\csu\pharmacie\repository\BaseImmatriculeRepository.class
 com\csu\pharmacie\utils\ExcelUtils$1.class
 com\csu\pharmacie\exception\ConflictException.class
 com\csu\pharmacie\service\FactureService$1.class
@@ -15,15 +16,18 @@ com\csu\pharmacie\entity\LigneFacture$LigneFactureBuilder.class
 com\csu\pharmacie\entity\User.class
 com\csu\pharmacie\controller\RegionController.class
 com\csu\pharmacie\dto\LoginResponse.class
+com\csu\pharmacie\service\BaseImportService.class
 com\csu\pharmacie\utils\ExcelUtils.class
 com\csu\pharmacie\dto\RegisterRequest.class
 com\csu\pharmacie\exception\ForbiddenException.class
 com\csu\pharmacie\exception\ResourceNotFoundException.class
 com\csu\pharmacie\dto\PharmacieImportResult.class
+com\csu\pharmacie\controller\BaseController.class
 com\csu\pharmacie\service\ExportService.class
 com\csu\pharmacie\dto\LoginResponse$LoginResponseBuilder.class
 com\csu\pharmacie\dto\RegionStat$RegionStatBuilder.class
 com\csu\pharmacie\security\JwtAuthFilter.class
+com\csu\pharmacie\repository\BaseTraiteRepository.class
 com\csu\pharmacie\dto\MonthData$MonthDataBuilder.class
 com\csu\pharmacie\dto\FactureRequest.class
 com\csu\pharmacie\dto\PharmacieRequest.class
@@ -37,6 +41,7 @@ com\csu\pharmacie\entity\LigneFacture.class
 com\csu\pharmacie\service\AuthService.class
 com\csu\pharmacie\controller\UserController.class
 com\csu\pharmacie\entity\StatutMedicament.class
+com\csu\pharmacie\dto\BaseImportResult.class
 com\csu\pharmacie\dto\ValidationRequest.class
 com\csu\pharmacie\dto\StatsDto$StatsDtoBuilder.class
 com\csu\pharmacie\security\JwtUtil.class
@@ -63,6 +68,8 @@ com\csu\pharmacie\PharmacieApplication.class
 com\csu\pharmacie\controller\PharmacieController.class
 com\csu\pharmacie\dto\UserRequest.class
 com\csu\pharmacie\service\MedicamentService.class
+com\csu\pharmacie\entity\BaseTraite.class
+com\csu\pharmacie\entity\BaseTraite$BaseTraiteBuilder.class
 com\csu\pharmacie\exception\BusinessException.class
 com\csu\pharmacie\config\OpenApiConfig.class
 com\csu\pharmacie\dto\LigneFactureDto.class
@@ -70,6 +77,8 @@ com\csu\pharmacie\service\UserService.class
 com\csu\pharmacie\entity\StatutFacture.class
 com\csu\pharmacie\entity\HistoriqueAction.class
 com\csu\pharmacie\dto\StatsDto.class
+com\csu\pharmacie\entity\BaseImmatricule.class
 com\csu\pharmacie\dto\PharmacieStat$PharmacieStatBuilder.class
 com\csu\pharmacie\dto\RegionStat.class
+com\csu\pharmacie\entity\BaseImmatricule$BaseImmatriculeBuilder.class
 com\csu\pharmacie\exception\GlobalExceptionHandler.class
