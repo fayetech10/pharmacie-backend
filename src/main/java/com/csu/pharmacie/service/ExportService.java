@@ -250,7 +250,9 @@ public class ExportService {
             double sumCsu = 0;
 
             for (LigneFacture ligne : lignes) {
-                Row row = sheet.createRow(rowIdx++);
+                int idx0 = rowIdx++;
+                Row row = sheet.createRow(idx0);
+                int rowNum = idx0 + 1; // n° de ligne Excel (1-based), pour les formules
                 double total = ligne.getQuantite() * ligne.getPrixUnitaire();
                 sumMontant += total;
                 sumBenef += total * 0.5;
@@ -271,40 +273,52 @@ public class ExportService {
                 row.createCell(4).setCellValue(ligne.getMedicament() != null ? ligne.getMedicament() : "");
                 row.getCell(4).setCellStyle(cellLeftStyle);
 
+                // P.U. (F) et Qté (G) = valeurs saisissables. Montant (H) et Parts (I, J) =
+                // formules : Excel les recalcule dès qu'on modifie le prix ou la quantité.
                 row.createCell(5).setCellValue(ligne.getPrixUnitaire());
                 row.getCell(5).setCellStyle(cellCenterStyle);
 
                 row.createCell(6).setCellValue(ligne.getQuantite());
                 row.getCell(6).setCellStyle(cellCenterStyle);
 
-                row.createCell(7).setCellValue(total);
-                row.getCell(7).setCellStyle(cellCenterStyle);
+                Cell montantCell = row.createCell(7);
+                montantCell.setCellFormula("F" + rowNum + "*G" + rowNum);
+                montantCell.setCellStyle(cellCenterStyle);
 
-                row.createCell(8).setCellValue(total * 0.5);
-                row.getCell(8).setCellStyle(cellCenterStyle);
+                Cell benefCell = row.createCell(8);
+                benefCell.setCellFormula("H" + rowNum + "*0.5");
+                benefCell.setCellStyle(cellCenterStyle);
 
-                row.createCell(9).setCellValue(total * 0.5);
-                row.getCell(9).setCellStyle(cellCenterStyle);
+                Cell csuCell = row.createCell(9);
+                csuCell.setCellFormula("H" + rowNum + "*0.5");
+                csuCell.setCellStyle(cellCenterStyle);
             }
 
-            // Totaux
+            // Totaux : sommes en formules (suivent les Montants/Parts recalculés).
+            boolean hasLignes = !lignes.isEmpty();
+            int firstDataRow = 12;       // 1ʳᵉ ligne de données (en-tête en ligne 11)
+            int lastDataRow = rowIdx;    // dernière ligne de données (1-based)
+
             Row totalRow = sheet.createRow(rowIdx);
             for (int i = 0; i < 7; i++) {
                 Cell cell = totalRow.createCell(i);
                 cell.setCellStyle(headerStyle);
             }
             totalRow.getCell(6).setCellValue("TOTAUX");
-            
+
             Cell cellSumM = totalRow.createCell(7);
-            cellSumM.setCellValue(sumMontant);
+            if (hasLignes) cellSumM.setCellFormula("SUM(H" + firstDataRow + ":H" + lastDataRow + ")");
+            else cellSumM.setCellValue(sumMontant);
             cellSumM.setCellStyle(headerStyle);
 
             Cell cellSumB = totalRow.createCell(8);
-            cellSumB.setCellValue(sumBenef);
+            if (hasLignes) cellSumB.setCellFormula("SUM(I" + firstDataRow + ":I" + lastDataRow + ")");
+            else cellSumB.setCellValue(sumBenef);
             cellSumB.setCellStyle(headerStyle);
 
             Cell cellSumC = totalRow.createCell(9);
-            cellSumC.setCellValue(sumCsu);
+            if (hasLignes) cellSumC.setCellFormula("SUM(J" + firstDataRow + ":J" + lastDataRow + ")");
+            else cellSumC.setCellValue(sumCsu);
             cellSumC.setCellStyle(headerStyle);
 
             // 6. Encadré à droite (H & I & J)
@@ -337,7 +351,9 @@ public class ExportService {
 
             Row bRow2 = sheet.createRow(boxStartRow + 1);
             Cell bCell2 = bRow2.createCell(7);
-            bCell2.setCellValue(sumCsu + " FCFA");
+            // Montant à régler = somme de la part SEN-CSU (suit les modifications).
+            if (hasLignes) bCell2.setCellFormula("SUM(J" + firstDataRow + ":J" + lastDataRow + ")&\" FCFA\"");
+            else bCell2.setCellValue(sumCsu + " FCFA");
             bCell2.setCellStyle(boxValStyle);
 
             // 7. Phrase d'arrêt
@@ -369,6 +385,10 @@ public class ExportService {
             CellStyle sigStyle = workbook.createCellStyle();
             sigStyle.setFont(sigFont);
             sigCell2.setCellStyle(sigStyle);
+
+            // Calcule et met en cache les résultats des formules (Montant, Parts, Totaux)
+            // afin que le fichier affiche les bons nombres dès l'ouverture.
+            org.apache.poi.xssf.usermodel.XSSFFormulaEvaluator.evaluateAllFormulaCells(workbook);
 
             // Ajuster la taille des colonnes
             for (int i = 0; i < 10; i++) {
