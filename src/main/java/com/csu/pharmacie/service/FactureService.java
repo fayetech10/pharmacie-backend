@@ -576,12 +576,14 @@ public class FactureService {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
                 String c4 = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(4));
-                if (c4 != null && c4.toLowerCase().contains("medicament")) {
+                // Comparaison insensible aux accents : l'en-tête exporté est « Médicament ».
+                if (c4 != null && sansAccents(c4).toLowerCase().contains("medicament")) {
                     headerRowIdx = i;
                     break;
                 }
             }
-            if (headerRowIdx < 0) headerRowIdx = 8;
+            // À défaut, on retombe sur l'index d'en-tête du format exporté (ligne 10).
+            if (headerRowIdx < 0) headerRowIdx = 10;
 
             // Le nom/matricule patient n'est renseigné que sur la 1ʳᵉ ligne d'un patient :
             // on le reporte sur les lignes suivantes (cellules laissées vides à l'export).
@@ -599,8 +601,9 @@ public class FactureService {
                 if (medicament == null || medicament.trim().isEmpty()) continue;
                 final String medNom = medicament.trim();
 
-                String nom = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(2));
-                String matricule = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(3));
+                // Colonnes du format exporté : col1 = N° Bon (matricule), col3 = Nom & Prénom.
+                String nom = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(3));
+                String matricule = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(1));
                 if (nom != null && !nom.trim().isEmpty()) currentNom = nom.trim();
                 if (matricule != null && !matricule.trim().isEmpty()) currentMatricule = matricule.trim();
 
@@ -673,5 +676,12 @@ public class FactureService {
         } catch (NumberFormatException e) {
             return 0;
         }
+    }
+
+    /** Supprime les accents/diacritiques pour des comparaisons robustes (« Médicament » → « Medicament »). */
+    private static String sansAccents(String s) {
+        if (s == null) return "";
+        return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
     }
 }
