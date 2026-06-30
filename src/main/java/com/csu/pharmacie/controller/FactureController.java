@@ -92,7 +92,7 @@ public class FactureController {
     }
 
     @PostMapping("/{id}/valider")
-    public ResponseEntity<Facture> validerFacture(@PathVariable String id, @Valid @RequestBody ValidationRequest request) {
+    public ResponseEntity<Facture> validerFacture(@PathVariable String id, @RequestBody(required = false) ValidationRequest request) {
         return ResponseEntity.ok(factureService.validerFacture(id, request));
     }
 

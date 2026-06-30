@@ -445,10 +445,24 @@ public class FactureService {
 
     @Transactional
     public void deleteFacture(String id) {
+        User user = getCurrentUser();
         Facture facture = getFactureById(id);
-        if (facture.getStatut() != StatutFacture.BROUILLON) {
-            throw new BusinessException("Seules les factures en brouillon peuvent être supprimées");
+        
+        // Si l'utilisateur n'est pas ADMIN
+        if (user.getRole() != Role.ADMIN) {
+            // Seuls les pharmaciens peuvent supprimer leurs propres factures en brouillon
+            if (user.getRole() == Role.PHARMACIEN) {
+                if (!java.util.Objects.equals(facture.getPharmacieId(), user.getPharmacieId())) {
+                    throw new ForbiddenException("Accès refusé");
+                }
+                if (facture.getStatut() != StatutFacture.BROUILLON) {
+                    throw new BusinessException("Seules les factures en brouillon peuvent être supprimées");
+                }
+            } else {
+                throw new ForbiddenException("Accès refusé");
+            }
         }
+        
         factureRepository.deleteById(id);
     }
 
