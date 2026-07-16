@@ -37,6 +37,14 @@ public class RegimeCheckConstraintCleaner implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        // ── AJOUT : Supprimer la contrainte obsolète sur le rôle utilisateur ──
+        try {
+            jdbc.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check");
+            log.info("Contrainte CHECK users_role_check obsolète supprimée sur users");
+        } catch (Exception e) {
+            log.warn("Suppression impossible de users_role_check : {}", e.getMessage());
+        }
+
         for (String table : TABLES) {
             for (String name : findRegimeCheckConstraints(table)) {
                 try {
