@@ -65,3 +65,7 @@ services:
       # ── JVM (instance free = 512 Mo) ──
       - key: JAVA_TOOL_OPTIONS
         value: "-XX:MaxRAMPercentage=75.0 -XX:+UseSerialGC"
+        
+      # ── Profil Spring Boot (Production) ──
+      - key: SPRING_PROFILES_ACTIVE
+        value: "prod"
