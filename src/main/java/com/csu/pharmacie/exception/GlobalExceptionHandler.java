@@ -72,8 +72,20 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
-        // Trace complète côté serveur (les erreurs 500 inattendues étaient jusqu'ici avalées en silence).
         log.error("Erreur interne non gérée", ex);
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Une erreur interne est survenue");
+        
+        // Trouver la cause racine
+        Throwable rootCause = ex;
+        while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+            rootCause = rootCause.getCause();
+        }
+        
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
+        body.put("error", HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase());
+        body.put("message", "Erreur interne: " + rootCause.getMessage());
+        body.put("details", ex.getMessage());
+        return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }
