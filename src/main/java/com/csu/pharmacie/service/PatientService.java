@@ -139,13 +139,30 @@ public class PatientService {
         }
 
         // 4. Lignes de factures d'officine (pharmacie) associées à ce patient
-        // On récupère les numéros de bon de commande ou on fait une correspondance par nom/matricule
+        // Requêtes ciblées au lieu de findAll() pour éviter de charger toutes les factures
+        // (y compris les images base64 des lignes) en mémoire — crash OOM sur Render (512 Mo).
         Set<String> numerosBons = bons.stream().map(BonCommande::getNumero).collect(Collectors.toSet());
         
         List<LigneFacture> lignesFactureOfficine = new ArrayList<>();
-        List<Facture> toutesFactures = factureRepository.findAll();
+
+        // Collecter les termes de recherche pour des requêtes JSONB ciblées
+        Set<String> searchTerms = new java.util.LinkedHashSet<>(numerosBons);
+        if (patient.getNumeroAssure() != null && !patient.getNumeroAssure().isBlank()) {
+            searchTerms.add(patient.getNumeroAssure());
+        }
+        if (patient.getNumeroCni() != null && !patient.getNumeroCni().isBlank()) {
+            searchTerms.add(patient.getNumeroCni());
+        }
+
+        // Charger uniquement les factures candidates (celles dont le JSONB lignes contient un terme)
+        Map<String, Facture> candidateFactures = new java.util.LinkedHashMap<>();
+        for (String term : searchTerms) {
+            for (Facture f : factureRepository.findByLignesContaining(term)) {
+                candidateFactures.putIfAbsent(f.getId(), f);
+            }
+        }
         
-        for (Facture f : toutesFactures) {
+        for (Facture f : candidateFactures.values()) {
             if (f.getLignes() == null) continue;
             for (LigneFacture lf : f.getLignes()) {
                 boolean matchBon = lf.getBonCommandeNumero() != null && !lf.getBonCommandeNumero().isBlank() 

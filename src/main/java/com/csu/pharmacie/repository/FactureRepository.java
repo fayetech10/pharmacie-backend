@@ -30,4 +30,14 @@ public interface FactureRepository extends JpaRepository<Facture, String> {
     // construites côté service (FactureService.getAllFacturesLight) en retirant les pièces
     // après lecture — les lignes étant stockées en JSONB, on ne peut pas projeter à l'intérieur
     // d'un sous-document comme le faisait MongoDB.
+
+    /**
+     * Recherche ciblée dans le JSONB des lignes de facture : ne charge que les factures dont
+     * au moins une ligne contient le terme recherché (numéro de bon, matricule patient, etc.).
+     * Utilisé par getDossierConsolide au lieu du findAll() qui chargeait toutes les factures
+     * (y compris les images base64) et faisait crasher Render (512 Mo).
+     */
+    @Query(value = "SELECT * FROM factures f WHERE CAST(f.lignes AS VARCHAR) LIKE CONCAT('%', :term, '%')",
+           nativeQuery = true)
+    List<Facture> findByLignesContaining(@Param("term") String term);
 }
