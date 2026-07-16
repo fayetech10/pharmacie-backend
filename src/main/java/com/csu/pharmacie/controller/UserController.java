@@ -21,6 +21,16 @@ public class UserController {
         return ResponseEntity.ok(userService.getAllUsers());
     }
 
+    /**
+     * Agents BCSU sélectionnables dans le formulaire des structures sanitaires.
+     * Accessible au Service Régional (limité à sa région) en plus de l'Admin,
+     * contrairement à la liste complète des utilisateurs (réservée à l'Admin).
+     */
+    @GetMapping("/bcsu")
+    public ResponseEntity<List<User>> getBcsuUsers() {
+        return ResponseEntity.ok(userService.getBcsuForCurrentUser());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<User> getUserById(@PathVariable String id) {
         return ResponseEntity.ok(userService.getUserById(id));

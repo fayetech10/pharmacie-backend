@@ -40,6 +40,8 @@ public class User {
     private Role role;
     private String pharmacieId;
     private String regionId;
+    // Structure sanitaire de rattachement (rôle STRUCTURE_SANITAIRE).
+    private String structureSanitaireId;
     @Builder.Default
     @Column(nullable = false)
     private boolean actif = true;

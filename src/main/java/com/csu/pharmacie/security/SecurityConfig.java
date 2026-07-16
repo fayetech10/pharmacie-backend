@@ -33,40 +33,66 @@ public class SecurityConfig {
     @Value("${cors.allowed-origins}")
     private String allowedOrigins;
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-                .cors(cors -> cors.configure(http))
-                .csrf(AbstractHttpConfigurer::disable)
-                .authorizeHttpRequests(auth -> auth
-                        // API 100% REST : on matche les chemins directement (AntPathRequestMatcher)
-                        // au lieu des MvcRequestMatcher, ce qui évite le lookup HandlerMappingIntrospector
-                        // de Spring MVC à chaque requête (et l'avertissement « Cache miss for REQUEST dispatch »).
-                        // Seule la connexion est publique (PAS l'inscription : voir ci-dessous)
-                        .requestMatchers(antMatcher("/api/auth/login")).permitAll()
-                        // Endpoint de santé public (cible du keep-alive anti cold-start Render)
-                        .requestMatchers(antMatcher(HttpMethod.GET, "/api/health")).permitAll()
-                        .requestMatchers(
-                                // Documentation OpenAPI / Swagger (le chemin du spec est /api-docs, cf. application.yml)
-                                antMatcher("/api-docs/**"), antMatcher("/api-docs.yaml"),
-                                antMatcher("/v3/api-docs/**"),
-                                antMatcher("/swagger-ui/**"), antMatcher("/swagger-ui.html")
-                        ).permitAll()
-                        // Création de comptes : réservée à l'Administrateur (empêche l'escalade de privilèges)
-                        .requestMatchers(antMatcher(HttpMethod.POST, "/api/auth/register")).hasRole("ADMIN")
-                        .requestMatchers(antMatcher("/api/users/**")).hasRole("ADMIN")
-                        // Gestion des pharmacies : réservée au Service Régional et à l'Admin
-                        // (le Service Central peut consulter via GET mais pas créer/modifier/supprimer)
-                        .requestMatchers(antMatcher(HttpMethod.POST, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
-                        .requestMatchers(antMatcher(HttpMethod.PUT, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
-                        .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
-                        .anyRequest().authenticated()
-                )
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+  @Bean
+  public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+      http
+              .cors(cors -> cors.configure(http))
+              .csrf(AbstractHttpConfigurer::disable)
+              .headers(headers -> headers.frameOptions(frame -> frame.disable()))
+              .authorizeHttpRequests(auth -> auth
+                      // Console H2 en local
+                      .requestMatchers(antMatcher("/h2-console/**")).permitAll()
+                      // API 100% REST : on matche les chemins directement (AntPathRequestMatcher)
+                      // au lieu des MvcRequestMatcher, ce qui évite le lookup HandlerMappingIntrospector
+                      // de Spring MVC à chaque requête (et l'avertissement « Cache miss for REQUEST dispatch »).
+                      // Seule la connexion est publique (PAS l'inscription : voir ci-dessous)
+                      .requestMatchers(antMatcher("/api/auth/login")).permitAll()
+                      // Endpoint de santé public (cible du keep-alive anti cold-start Render)
+                      .requestMatchers(antMatcher(HttpMethod.GET, "/api/health")).permitAll()
+                      .requestMatchers(
+                              // Documentation OpenAPI / Swagger (le chemin du spec est /api-docs, cf. application.yml)
+                              antMatcher("/api-docs/**"), antMatcher("/api-docs.yaml"),
+                              antMatcher("/v3/api-docs/**"),
+                              antMatcher("/swagger-ui/**"), antMatcher("/swagger-ui.html")
+                      ).permitAll()
+                      // Création de comptes : réservée à l'Administrateur (empêche l'escalade de privilèges)
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/auth/register")).hasRole("ADMIN")
+                      // Liste des agents BCSU (formulaire structures sanitaires) : ouverte au SR.
+                      // DOIT précéder la règle générale /api/users/** (premier matcher gagnant).
+                      .requestMatchers(antMatcher(HttpMethod.GET, "/api/users/bcsu")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                      .requestMatchers(antMatcher("/api/users/**")).hasAnyRole("ADMIN", "SERVICE_REGIONAL")
+                      // Gestion des pharmacies : réservée au Service Régional et à l'Admin
+                      // (le Service Central peut consulter via GET mais pas créer/modifier/supprimer)
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.PUT, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                      // Espace BCSU : patients, lettres de garantie, bons de commande.
+                      // Les GET restent couverts par anyRequest().authenticated() ; le filtrage fin
+                      // (dossiers propres à l'agent, recherche ouverte aux pharmacies) est fait en service.
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/patients/**")).hasAnyRole("BCSU", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.PUT, "/api/patients/**")).hasAnyRole("BCSU", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/patients/**")).hasAnyRole("BCSU", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/lettres-garantie/**")).hasAnyRole("BCSU", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.PUT, "/api/lettres-garantie/**")).hasAnyRole("BCSU", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/lettres-garantie/**")).hasAnyRole("BCSU", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/bons-commande/**")).hasAnyRole("BCSU", "ADMIN")
+                      // Structures sanitaires : gestion réservée au Service Régional et à l'Admin (comme les pharmacies).
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/structures-sanitaires/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.PUT, "/api/structures-sanitaires/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/structures-sanitaires/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                      // Feuilles de soins : délivrance (BCSU), prise en charge (structure), annulation (BCSU) ; contrôle fin en service.
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/feuilles-soins/**")).hasAnyRole("BCSU", "STRUCTURE_SANITAIRE", "ADMIN")
+                      // Facturation des structures : création/envoi (structure) + validation/rejet (SR) ; contrôle fin en service.
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/factures-structure/**")).hasAnyRole("STRUCTURE_SANITAIRE", "SERVICE_REGIONAL", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.PUT, "/api/factures-structure/**")).hasAnyRole("STRUCTURE_SANITAIRE", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/factures-structure/**")).hasAnyRole("STRUCTURE_SANITAIRE", "ADMIN")
+                      .anyRequest().authenticated()
+              )
+              .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+              .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
-        return http.build();
-    }
+      return http.build();
+  }
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {

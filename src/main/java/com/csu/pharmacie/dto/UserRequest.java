@@ -12,4 +12,5 @@ public class UserRequest {
     private Role role;
     private String pharmacieId;
     private String regionId;
+    private String structureSanitaireId;
 }

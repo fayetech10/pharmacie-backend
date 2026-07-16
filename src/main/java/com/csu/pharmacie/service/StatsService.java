@@ -5,14 +5,27 @@ import com.csu.pharmacie.dto.MonthData;
 import com.csu.pharmacie.dto.PharmacieStat;
 import com.csu.pharmacie.dto.RegionStat;
 import com.csu.pharmacie.dto.StatsDto;
+import com.csu.pharmacie.dto.AgentStatDto;
 import com.csu.pharmacie.entity.Facture;
 import com.csu.pharmacie.entity.HistoriqueAction;
 import com.csu.pharmacie.entity.LigneFacture;
 import com.csu.pharmacie.entity.Region;
 import com.csu.pharmacie.entity.StatutFacture;
 import com.csu.pharmacie.entity.StatutLigne;
+import com.csu.pharmacie.entity.User;
+import com.csu.pharmacie.entity.Role;
+import com.csu.pharmacie.entity.Pointage;
+import com.csu.pharmacie.entity.StructureSanitaire;
+import com.csu.pharmacie.entity.BonCommande;
 import com.csu.pharmacie.repository.FactureRepository;
 import com.csu.pharmacie.repository.RegionRepository;
+import com.csu.pharmacie.repository.UserRepository;
+import com.csu.pharmacie.repository.PatientRepository;
+import com.csu.pharmacie.repository.LettreGarantieRepository;
+import com.csu.pharmacie.repository.FeuilleSoinsRepository;
+import com.csu.pharmacie.repository.PointageRepository;
+import com.csu.pharmacie.repository.StructureSanitaireRepository;
+import com.csu.pharmacie.repository.BonCommandeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -30,20 +43,78 @@ public class StatsService {
 
     private final FactureRepository factureRepository;
     private final RegionRepository regionRepository;
+    private final UserRepository userRepository;
+    private final PatientRepository patientRepository;
+    private final LettreGarantieRepository lettreGarantieRepository;
+    private final FeuilleSoinsRepository feuilleSoinsRepository;
+    private final PointageRepository pointageRepository;
+    private final StructureSanitaireRepository structureSanitaireRepository;
+    private final BonCommandeRepository bonCommandeRepository;
 
     public StatsDto getStatsNational() {
-        return computeStats(factureRepository.findAll());
+        return computeStats(factureRepository.findAll(), null, null);
     }
 
     public StatsDto getStatsRegional(String regionId) {
-        return computeStats(factureRepository.findByRegionId(regionId));
+        return computeStats(factureRepository.findByRegionId(regionId), regionId, null);
     }
 
     public StatsDto getStatsPharmacie(String pharmacieId) {
-        return computeStats(factureRepository.findByPharmacieId(pharmacieId));
+        return computeStats(factureRepository.findByPharmacieId(pharmacieId), null, pharmacieId);
     }
 
-    private StatsDto computeStats(List<Facture> factures) {
+    public List<AgentStatDto> getStatsAgents() {
+        List<User> bcsuAgents = userRepository.findAll().stream()
+                .filter(u -> u.getRole() == Role.BCSU)
+                .collect(Collectors.toList());
+
+        // Précharger la structure de rattachement pour chaque agent BCSU
+        Map<String, String> bcsuStructureMap = structureSanitaireRepository.findAll().stream()
+                .filter(s -> s.getBcsuId() != null)
+                .collect(Collectors.toMap(StructureSanitaire::getBcsuId, StructureSanitaire::getNom, (a, b) -> a));
+
+        List<AgentStatDto> stats = new ArrayList<>();
+        for (User u : bcsuAgents) {
+            String uid = u.getId();
+            long patients = patientRepository.countByCreatedBy(uid);
+            long lettres = lettreGarantieRepository.countByCreatedBy(uid);
+            long feuilles = feuilleSoinsRepository.countByCreatedBy(uid);
+            
+            // Calculer les heures travaillées de la semaine
+            LocalDateTime oneWeekAgo = LocalDateTime.now().minusDays(7);
+            List<Pointage> pointages = pointageRepository.findByUserIdOrderByDateDesc(uid).stream()
+                    .filter(p -> p.getDate().isAfter(oneWeekAgo.toLocalDate()) || p.getDate().isEqual(oneWeekAgo.toLocalDate()))
+                    .collect(Collectors.toList());
+            
+            double heuresSemaine = 0;
+            for (Pointage p : pointages) {
+                if (p.getHeureArrivee() != null && p.getHeureDepart() != null) {
+                    heuresSemaine += Duration.between(p.getHeureArrivee(), p.getHeureDepart()).toMinutes() / 60.0;
+                }
+            }
+
+            // Temps moyen : fictif ou calculé plus tard. 0 pour l'instant
+            double tempsMoyen = 0;
+
+            // Résoudre le nom de la structure via bcsuId
+            String structureNom = bcsuStructureMap.getOrDefault(uid, "Non rattaché");
+
+            stats.add(AgentStatDto.builder()
+                    .id(uid)
+                    .nom(u.getPrenom() + " " + u.getNom())
+                    .structure(structureNom)
+                    .dossiersTraites(patients)
+                    .lettresEmises(lettres)
+                    .feuillesSoins(feuilles)
+                    .anomalies(0)
+                    .tempsMoyen(tempsMoyen)
+                    .heuresTravailleesSemaine(round1(heuresSemaine))
+                    .build());
+        }
+        return stats;
+    }
+
+    private StatsDto computeStats(List<Facture> factures, String regionId, String pharmacieId) {
         long nombreFactures = factures.size();
         double montantTotal = factures.stream().mapToDouble(Facture::getMontantTotal).sum();
         double montantCsu = montantTotal / 2.0;
@@ -74,11 +145,127 @@ public class StatsService {
             }
         }
 
+        // --- NOUVEAUX KPI : Patients, Lettres, Feuilles selon Scope ---
+        long totalPatients = 0;
+        long totalLettres = 0;
+        long totalFeuilles = 0;
+
+        if (regionId != null && !regionId.isEmpty()) {
+            List<String> structIds = structureSanitaireRepository.findByRegionId(regionId).stream()
+                    .map(StructureSanitaire::getId)
+                    .collect(Collectors.toList());
+            List<String> uids = userRepository.findAll().stream()
+                    .filter(u -> regionId.equals(u.getRegionId()))
+                    .map(User::getId)
+                    .collect(Collectors.toList());
+
+            if (!uids.isEmpty()) {
+                totalLettres = lettreGarantieRepository.findAll().stream()
+                        .filter(l -> uids.contains(l.getCreatedBy()))
+                        .count();
+                totalPatients = patientRepository.findAll().stream()
+                        .filter(p -> uids.contains(p.getCreatedBy()))
+                        .count();
+            }
+            if (!structIds.isEmpty()) {
+                totalFeuilles = feuilleSoinsRepository.findAll().stream()
+                        .filter(fs -> structIds.contains(fs.getStructureSanitaireId()))
+                        .count();
+            }
+        } else if (pharmacieId != null && !pharmacieId.isEmpty()) {
+            totalPatients = factures.stream()
+                    .filter(f -> f.getLignes() != null)
+                    .flatMap(f -> f.getLignes().stream())
+                    .map(LigneFacture::getPatientMatricule)
+                    .filter(m -> m != null && !m.isBlank())
+                    .distinct()
+                    .count();
+        } else {
+            totalPatients = patientRepository.count();
+            totalLettres = lettreGarantieRepository.count();
+            totalFeuilles = feuilleSoinsRepository.count();
+        }
+
+        // --- REPARTITIONS PAR REGIME ---
+        Map<String, Long> lignesParRegime = new HashMap<>();
+        Map<String, Double> montantParRegime = new HashMap<>();
+
+        List<String> bonNums = factures.stream()
+                .filter(f -> f.getLignes() != null)
+                .flatMap(f -> f.getLignes().stream())
+                .map(LigneFacture::getBonCommandeNumero)
+                .filter(n -> n != null && !n.isBlank())
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<String, String> bonRegimeMap = new HashMap<>();
+        if (!bonNums.isEmpty()) {
+            try {
+                bonRegimeMap = bonCommandeRepository.findByNumeroIn(bonNums).stream()
+                        .filter(b -> b.getRegime() != null)
+                        .collect(Collectors.toMap(BonCommande::getNumero, b -> b.getRegime().name(), (a, b) -> a));
+            } catch (Exception e) {
+                // Sourdine
+            }
+        }
+
+        List<String> matricules = factures.stream()
+                .filter(f -> f.getLignes() != null)
+                .flatMap(f -> f.getLignes().stream())
+                .filter(l -> l.getBonCommandeNumero() == null || l.getBonCommandeNumero().isBlank())
+                .map(LigneFacture::getPatientMatricule)
+                .filter(m -> m != null && !m.isBlank())
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<String, String> patientRegimeMap = new HashMap<>();
+        if (!matricules.isEmpty()) {
+            try {
+                List<com.csu.pharmacie.entity.Patient> patients = new ArrayList<>();
+                patients.addAll(patientRepository.findByNumeroAssureIn(matricules));
+                patients.addAll(patientRepository.findByNumeroCniIn(matricules));
+                for (com.csu.pharmacie.entity.Patient p : patients) {
+                    if (p.getRegime() != null) {
+                        if (p.getNumeroAssure() != null) {
+                            patientRegimeMap.put(p.getNumeroAssure(), p.getRegime().name());
+                        }
+                        if (p.getNumeroCni() != null) {
+                            patientRegimeMap.put(p.getNumeroCni(), p.getRegime().name());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Sourdine
+            }
+        }
+
+        for (Facture f : factures) {
+            if (f.getLignes() == null) continue;
+            for (LigneFacture l : f.getLignes()) {
+                String regime = null;
+                if (l.getBonCommandeNumero() != null && !l.getBonCommandeNumero().isBlank()) {
+                    regime = bonRegimeMap.get(l.getBonCommandeNumero());
+                }
+                if (regime == null && l.getPatientMatricule() != null && !l.getPatientMatricule().isBlank()) {
+                    regime = patientRegimeMap.get(l.getPatientMatricule());
+                }
+                if (regime == null) {
+                    regime = "CONTRIBUTIF";
+                }
+
+                lignesParRegime.put(regime, lignesParRegime.getOrDefault(regime, 0L) + l.getQuantite());
+                montantParRegime.put(regime, montantParRegime.getOrDefault(regime, 0.0) + l.getMontant());
+            }
+        }
+
         return StatsDto.builder()
                 .nombreFactures(nombreFactures)
                 .montantTotal(montantTotal)
                 .montantCsu(montantCsu)
                 .montantMoyen(montantMoyen)
+                .totalPatients(totalPatients)
+                .totalLettresGarantie(totalLettres)
+                .totalFeuillesSoins(totalFeuilles)
                 .tauxValidation(tauxValidation)
                 .tauxRejet(tauxRejet)
                 .delaiMoyenTraitementJours(computeDelaiMoyen(factures))
@@ -86,6 +273,8 @@ public class StatsService {
                 .lignesRejetees(lignesRejetees)
                 .facturesParStatut(facturesParStatut)
                 .montantParStatut(montantParStatut)
+                .lignesParRegime(lignesParRegime)
+                .montantParRegime(montantParRegime)
                 .parRegion(computeParRegion(factures))
                 .topPharmacies(computeTopPharmacies(factures, 8))
                 .topMedicaments(computeTopMedicaments(factures, 8))

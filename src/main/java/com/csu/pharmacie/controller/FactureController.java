@@ -26,9 +26,11 @@ public class FactureController {
     private final ExportService exportService;
 
     @GetMapping
-    public ResponseEntity<List<Facture>> getAllFactures() {
+    public ResponseEntity<List<Facture>> getAllFactures(
+            @RequestParam(required = false) Integer mois,
+            @RequestParam(required = false) Integer annee) {
         // Liste allégée (sans les images base64 des lignes) : réponse beaucoup plus légère.
-        return ResponseEntity.ok(factureService.getAllFacturesLight());
+        return ResponseEntity.ok(factureService.getAllFacturesLight(mois, annee));
     }
 
     @GetMapping("/{id}")

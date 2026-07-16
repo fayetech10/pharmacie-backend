@@ -22,8 +22,14 @@ public class LigneFacture {
     private StatutLigne statutLigne = StatutLigne.EN_ATTENTE;
     private String motifRejet;
 
+    // Numéro du bon de commande numérique (BCSU) intégré au dossier patient, le cas échéant.
+    private String bonCommandeNumero;
+
     // Pièces justificatives du dossier patient (images encodées en base64 / data URL)
     private String ticketCaisse;
     private String bonCommande;
     private String ordonnance;
+
+    // Ajouté pour l'affichage dans l'historique (nom de la pharmacie)
+    private String pharmacieNom;
 }

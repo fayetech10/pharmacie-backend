@@ -2,6 +2,7 @@ package com.csu.pharmacie.controller;
 
 import com.csu.pharmacie.dto.MonthData;
 import com.csu.pharmacie.dto.StatsDto;
+import com.csu.pharmacie.dto.AgentStatDto;
 import com.csu.pharmacie.service.StatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,11 @@ public class StatsController {
     @GetMapping("/national")
     public ResponseEntity<StatsDto> getStatsNational() {
         return ResponseEntity.ok(statsService.getStatsNational());
+    }
+
+    @GetMapping("/agents")
+    public ResponseEntity<List<AgentStatDto>> getStatsAgents() {
+        return ResponseEntity.ok(statsService.getStatsAgents());
     }
 
     @GetMapping("/regional")

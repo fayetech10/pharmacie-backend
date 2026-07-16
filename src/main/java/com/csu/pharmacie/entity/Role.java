@@ -4,5 +4,7 @@ public enum Role {
     PHARMACIEN,
     SERVICE_REGIONAL,
     SERVICE_CENTRAL,
-    ADMIN
+    ADMIN,
+    BCSU,
+    STRUCTURE_SANITAIRE
 }

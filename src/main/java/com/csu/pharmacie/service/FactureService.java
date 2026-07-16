@@ -13,6 +13,7 @@ import com.csu.pharmacie.repository.FactureRepository;
 import com.csu.pharmacie.repository.PharmacieRepository;
 import com.csu.pharmacie.repository.UserRepository;
 import com.csu.pharmacie.repository.MedicamentRepository;
+import com.csu.pharmacie.repository.BonCommandeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class FactureService {
     private final PharmacieRepository pharmacieRepository;
     private final UserRepository userRepository;
     private final MedicamentRepository medicamentRepository;
+    private final BonCommandeRepository bonCommandeRepository;
 
     private User getCurrentUser() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -46,20 +48,36 @@ public class FactureService {
                 .orElseThrow(() -> new ResourceNotFoundException("Utilisateur non trouvé"));
     }
 
-    public List<Facture> getAllFactures() {
+    public List<Facture> getAllFactures(Integer mois, Integer annee) {
         User user = getCurrentUser();
-
+        
+        List<Facture> allFactures;
         switch (user.getRole()) {
             case PHARMACIEN:
-                return factureRepository.findByPharmacieId(user.getPharmacieId());
+                allFactures = factureRepository.findByPharmacieId(user.getPharmacieId());
+                break;
             case SERVICE_REGIONAL:
-                return factureRepository.findByRegionId(user.getRegionId());
+                allFactures = factureRepository.findByRegionId(user.getRegionId());
+                break;
             case SERVICE_CENTRAL:
             case ADMIN:
-                return factureRepository.findAll();
+                allFactures = factureRepository.findAll();
+                break;
             default:
-                return new ArrayList<>();
+                allFactures = new ArrayList<>();
         }
+        
+        if (mois != null && mois > 0) {
+            allFactures = allFactures.stream().filter(f -> f.getMois() == mois).collect(Collectors.toList());
+        }
+        if (annee != null && annee > 0) {
+            allFactures = allFactures.stream().filter(f -> f.getAnnee() == annee).collect(Collectors.toList());
+        }
+        return allFactures;
+    }
+    
+    public List<Facture> getAllFactures() {
+        return getAllFactures(null, null);
     }
 
     /**
@@ -67,8 +85,8 @@ public class FactureService {
      * exclut les images base64 des lignes (non affichées en liste) pour des réponses bien
      * plus légères. Les exports (Excel/PDF) continuent d'utiliser {@link #getAllFactures()}.
      */
-    public List<Facture> getAllFacturesLight() {
-        return stripPieces(getAllFactures());
+    public List<Facture> getAllFacturesLight(Integer mois, Integer annee) {
+        return stripPieces(getAllFactures(mois, annee));
     }
 
     /**
@@ -88,6 +106,43 @@ public class FactureService {
             }
         }
         return factures;
+    }
+
+    /**
+     * Usage multi-pharmacies : vérifie que les nouvelles lignes ne dépassent pas les lignes
+     * disponibles de chaque bon référencé, puis incrémente le compteur {@code lignesUtilisees}.
+     * Un bon n'est « complet » que quand toutes ses lignes ({@code nombreLignes}) sont consommées.
+     *
+     * @param nouvellesLignes les lignes ajoutées lors de cette opération (pas les lignes déjà en base)
+     */
+    private void validerEtConsommerLignesBons(List<LigneFacture> nouvellesLignes) {
+        if (nouvellesLignes == null || nouvellesLignes.isEmpty()) return;
+
+        // Regroupe les nouvelles lignes par numéro de bon de commande.
+        Map<String, Long> lignesParBon = nouvellesLignes.stream()
+                .map(LigneFacture::getBonCommandeNumero)
+                .filter(n -> n != null && !n.isBlank())
+                .collect(Collectors.groupingBy(n -> n, Collectors.counting()));
+
+        for (Map.Entry<String, Long> entry : lignesParBon.entrySet()) {
+            String numero = entry.getKey();
+            int nbNouvelles = entry.getValue().intValue();
+
+            bonCommandeRepository.findByNumero(numero).ifPresent(bon -> {
+                int disponibles = bon.lignesDisponibles();
+                if (nbNouvelles > disponibles) {
+                    throw new BusinessException(
+                            "Le bon de commande " + numero + " n'a que " + disponibles
+                                    + " ligne(s) disponible(s), mais vous essayez d'en utiliser " + nbNouvelles
+                                    + ". Le patient peut se rendre dans une autre pharmacie avec ce bon pour les médicaments restants.");
+                }
+                // Incrémente le compteur de lignes consommées.
+                bon.setLignesUtilisees((bon.getLignesUtilisees() != null ? bon.getLignesUtilisees() : 0) + nbNouvelles);
+                bon.setDateDerniereUtilisation(LocalDateTime.now());
+                bon.setUpdatedAt(LocalDateTime.now());
+                bonCommandeRepository.save(bon);
+            });
+        }
     }
 
     public Facture getFactureById(String id) {
@@ -206,6 +261,7 @@ public class FactureService {
                     .build();
         }
 
+        List<LigneFacture> nouvellesLignes = new ArrayList<>();
         for (LigneFactureDto ligneDto : lignesDto) {
             // Vérifier si le médicament est exclu
             medicamentRepository.findByCodeIgnoreCase(ligneDto.getCodeProduit())
@@ -223,12 +279,17 @@ public class FactureService {
             newLigne.setQuantite(ligneDto.getQuantite());
             newLigne.setPrixUnitaire(ligneDto.getPrixUnitaire());
             newLigne.setMontant(ligneDto.getQuantite() * ligneDto.getPrixUnitaire());
+            newLigne.setBonCommandeNumero(ligneDto.getBonCommandeNumero());
             newLigne.setTicketCaisse(ligneDto.getTicketCaisse());
             newLigne.setBonCommande(ligneDto.getBonCommande());
             newLigne.setOrdonnance(ligneDto.getOrdonnance());
 
+            nouvellesLignes.add(newLigne);
             facture.getLignes().add(newLigne);
         }
+
+        // Multi-pharmacies : valide les lignes disponibles et incrémente le compteur AVANT la sauvegarde.
+        validerEtConsommerLignesBons(nouvellesLignes);
 
         double montantTotal = facture.getLignes().stream()
                 .mapToDouble(LigneFacture::getMontant)
@@ -258,6 +319,8 @@ public class FactureService {
         facture.setUpdatedAt(LocalDateTime.now());
 
         ajouterHistorique(facture, user, StatutFacture.BROUILLON, "Modification de la facture");
+        // Note : updateFacture remplace toutes les lignes. La validation incrémentale s'applique
+        // uniquement lors de l'ajout de nouvelles lignes (addLignesToCurrent). Ici on sauvegarde directement.
         return factureRepository.save(facture);
     }
 
@@ -506,6 +569,7 @@ public class FactureService {
                     .quantite(dto.getQuantite())
                     .prixUnitaire(dto.getPrixUnitaire())
                     .montant(montant)
+                    .bonCommandeNumero(dto.getBonCommandeNumero())
                     .ticketCaisse(dto.getTicketCaisse())
                     .bonCommande(dto.getBonCommande())
                     .ordonnance(dto.getOrdonnance())

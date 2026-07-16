@@ -15,4 +15,12 @@ public class LoginResponse {
     private Role role;
     private String pharmacieId;
     private String regionId;
+    private String structureSanitaireId;
+
+    // Contrôle du pointage à la connexion (agents BCSU) :
+    // heure du pointage du jour et indicateur « première connexion de la journée ».
+    private String pointageHeure;
+    private Boolean premierPointage;
+    private String pointageDepartHeure;
 }
+
