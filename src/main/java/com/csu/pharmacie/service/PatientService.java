@@ -77,6 +77,7 @@ public class PatientService {
     /**
      * Récupère le dossier CSU consolidé d'un patient (Lettres, Bons, Factures pharmacie, Factures structure).
      */
+    @Transactional(readOnly = true)
     public DossierPatientDto getDossierConsolide(String patientId) {
         Patient patient = getById(patientId);
 
