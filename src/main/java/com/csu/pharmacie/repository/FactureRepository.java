@@ -37,7 +37,7 @@ public interface FactureRepository extends JpaRepository<Facture, String> {
      * Utilisé par getDossierConsolide au lieu du findAll() qui chargeait toutes les factures
      * (y compris les images base64) et faisait crasher Render (512 Mo).
      */
-    @Query(value = "SELECT * FROM factures f WHERE CAST(f.lignes AS VARCHAR) LIKE CONCAT('%', :term, '%')",
+    @Query(value = "SELECT * FROM factures f WHERE CAST(f.lignes AS TEXT) LIKE CONCAT('%', :term, '%')",
            nativeQuery = true)
     List<Facture> findByLignesContaining(@Param("term") String term);
 }
