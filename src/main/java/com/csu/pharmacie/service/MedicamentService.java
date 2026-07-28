@@ -4,6 +4,7 @@ import com.csu.pharmacie.entity.Medicament;
 import com.csu.pharmacie.entity.Role;
 import com.csu.pharmacie.entity.StatutMedicament;
 import com.csu.pharmacie.entity.User;
+import com.csu.pharmacie.exception.BusinessException;
 import com.csu.pharmacie.exception.ConflictException;
 import com.csu.pharmacie.exception.ForbiddenException;
 import com.csu.pharmacie.exception.ResourceNotFoundException;
@@ -50,6 +51,78 @@ public class MedicamentService {
         return medicamentRepository.findTop10ByNomContainingIgnoreCaseAndActifTrue(query);
     }
 
+    /**
+     * Équivalences d'un médicament : les autres spécialités ÉLIGIBLES partageant la même DCI,
+     * classées du MOINS CHER au plus cher. Les médicaments sans prix de référence connu sont
+     * renvoyés en fin de liste (le prix vient de la colonne facultative de l'import éligibles).
+     */
+    public List<Medicament> getEquivalents(String nom) {
+        if (nom == null || nom.isBlank()) return List.of();
+
+        // findAllByNomIgnoreCase (et non findByNomIgnoreCase) : la colonne « nom » n'a pas
+        // de contrainte d'unicité, la variante Optional lèverait sur un doublon d'import.
+        List<Medicament> homonymes = medicamentRepository.findAllByNomIgnoreCase(nom.trim());
+        Medicament source = homonymes.isEmpty() ? null : homonymes.get(0);
+        if (source == null || source.getDci() == null || source.getDci().isBlank()) return List.of();
+
+        return medicamentRepository.findByDciIgnoreCaseAndActifTrue(source.getDci().trim()).stream()
+                .filter(m -> m.getStatut() == StatutMedicament.ELIGIBLE)
+                .filter(m -> !m.getId().equals(source.getId()))
+                .sorted(java.util.Comparator.comparing(
+                        Medicament::getPrixReference,
+                        java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+                .toList();
+    }
+
+    /** Lecture tolérante d'une cellule de prix (numérique ou texte). */
+    private Double lirePrix(org.apache.poi.ss.usermodel.Cell cell) {
+        if (cell == null) return null;
+        try {
+            if (cell.getCellType() == org.apache.poi.ss.usermodel.CellType.NUMERIC) {
+                return cell.getNumericCellValue();
+            }
+            String txt = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(cell);
+            if (txt == null || txt.isBlank()) return null;
+            return Double.parseDouble(txt.trim().replace(" ", "").replace(",", "."));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Liste des médicaments non répertoriés (ajoutés par des pharmaciens sur leurs factures),
+     * en attente de classement — validation en éligible ou passage en exclusion — par la SEN-CSU.
+     */
+    public List<Medicament> getNonRepertories() {
+        checkAccess();
+        return medicamentRepository.findByStatutAndActifTrueOrderByCreatedAtDesc(StatutMedicament.NON_REPERTORIE);
+    }
+
+    /**
+     * Classe un médicament non répertorié : le fait basculer en ÉLIGIBLE (intégration définitive)
+     * ou en EXCLU (exclusion définitive). Alimente ainsi la liste concernée. Réservé SEN-CSU / Admin.
+     */
+    public Medicament classer(String id, StatutMedicament statut, String motif) {
+        checkAccess();
+        if (statut != StatutMedicament.ELIGIBLE && statut != StatutMedicament.EXCLU) {
+            throw new BusinessException("Un médicament non répertorié ne peut être classé qu'en ÉLIGIBLE ou EXCLU.");
+        }
+        Medicament medicament = medicamentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Médicament non trouvé"));
+
+        medicament.setStatut(statut);
+        if (statut == StatutMedicament.EXCLU) {
+            medicament.setMotif((motif != null && !motif.isBlank())
+                    ? motif.trim()
+                    : (medicament.getMotif() != null && !medicament.getMotif().isBlank()
+                        ? medicament.getMotif()
+                        : "Exclu par la SEN-CSU"));
+        }
+        medicament.setActif(true);
+        medicament.setUpdatedAt(LocalDateTime.now());
+        return medicamentRepository.save(medicament);
+    }
+
     public Medicament create(Medicament medicament) {
         checkAccess();
         if (medicamentRepository.findByCode(medicament.getCode()).isPresent()) {
@@ -92,13 +165,18 @@ public class MedicamentService {
 
             log.info("Début de l'importation des médicaments éligibles");
 
-            // Passer tous les médicaments existants en EXCLU
-            List<Medicament> tousLesMedicaments = medicamentRepository.findAll();
-            for (Medicament m : tousLesMedicaments) {
-                m.setStatut(StatutMedicament.EXCLU);
+            // Le fichier importé fait foi pour la liste des ÉLIGIBLES : les médicaments
+            // auparavant éligibles et absents du fichier repassent en NON_REPERTORIE.
+            // Les EXCLU ne sont PAS touchés — ils viennent du référentiel d'exclusions,
+            // avec leur motif, et écraser ce statut ferait perdre cette qualification.
+            List<Medicament> anciensEligibles = medicamentRepository.findAll().stream()
+                    .filter(m -> m.getStatut() == StatutMedicament.ELIGIBLE)
+                    .toList();
+            for (Medicament m : anciensEligibles) {
+                m.setStatut(StatutMedicament.NON_REPERTORIE);
             }
-            medicamentRepository.saveAll(tousLesMedicaments);
-            log.info("{} médicaments existants passés en EXCLU", tousLesMedicaments.size());
+            medicamentRepository.saveAll(anciensEligibles);
+            log.info("{} médicaments éligibles remis en NON_REPERTORIE avant import", anciensEligibles.size());
 
             Sheet sheet = workbook.getSheetAt(0);
             int imported = 0;
@@ -112,6 +190,8 @@ public class MedicamentService {
                 String dci = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(1));
                 String classeTherapeutique = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(2));
                 String liste = com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(3));
+                // Colonne facultative : prix de référence, utilisé pour classer les équivalences.
+                Double prixReference = lirePrix(row.getCell(4));
 
                 if (nom == null || nom.trim().isEmpty()) {
                     continue;
@@ -124,6 +204,7 @@ public class MedicamentService {
                     med.setDci(dci);
                     med.setClasseTherapeutique(classeTherapeutique);
                     med.setListe(liste);
+                    if (prixReference != null) med.setPrixReference(prixReference);
                     med.setUpdatedAt(LocalDateTime.now());
                     medicamentRepository.save(med);
                     updated++;
@@ -134,6 +215,7 @@ public class MedicamentService {
                             .dci(dci)
                             .classeTherapeutique(classeTherapeutique)
                             .liste(liste)
+                            .prixReference(prixReference)
                             .statut(StatutMedicament.ELIGIBLE)
                             .actif(true)
                             .createdAt(LocalDateTime.now())

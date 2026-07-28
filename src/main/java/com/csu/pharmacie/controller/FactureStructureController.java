@@ -143,6 +143,44 @@ public class FactureStructureController {
         return ResponseEntity.ok(factureService.getAllForCurrentUser(mois, annee, regime));
     }
 
+    /**
+     * Identifiants + statuts des factures structure visibles : alimente les badges de
+     * notification sans transférer (ni désérialiser) les lignes de facture.
+     */
+    @GetMapping("/statuts")
+    public ResponseEntity<List<com.csu.pharmacie.dto.FactureStatutDto>> getStatuts() {
+        return ResponseEntity.ok(factureService.getStatutsPourBadges());
+    }
+
+    /** Factures (envoyées et suivantes) des postes de santé rattachés à la structure courante. */
+    @GetMapping("/postes-rattaches")
+    public ResponseEntity<List<FactureStructure>> getFacturesPostesRattaches(
+            @RequestParam(required = false) Integer mois,
+            @RequestParam(required = false) Integer annee,
+            @RequestParam(required = false) String regime) {
+        return ResponseEntity.ok(factureService.getFacturesPostesRattaches(mois, annee, regime));
+    }
+
+    /** Supprime la saisie complète d'un patient (identifiée par sa lettre de garantie) avant l'envoi mensuel. */
+    @DeleteMapping("/{id}/patients")
+    public ResponseEntity<FactureStructure> supprimerPatient(@PathVariable String id, @RequestParam String lettre) {
+        return ResponseEntity.ok(factureService.supprimerPatient(id, lettre));
+    }
+
+    /** Modifie une prestation (ligne) avant l'envoi mensuel. */
+    @PutMapping("/{id}/lignes/{index}")
+    public ResponseEntity<FactureStructure> modifierLigne(
+            @PathVariable String id, @PathVariable int index,
+            @Valid @RequestBody com.csu.pharmacie.dto.LigneFactureStructureDto dto) {
+        return ResponseEntity.ok(factureService.modifierLigne(id, index, dto));
+    }
+
+    /** Supprime une prestation (ligne) avant l'envoi mensuel. */
+    @DeleteMapping("/{id}/lignes/{index}")
+    public ResponseEntity<FactureStructure> supprimerLigne(@PathVariable String id, @PathVariable int index) {
+        return ResponseEntity.ok(factureService.supprimerLigne(id, index));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<FactureStructure> getById(@PathVariable String id) {
         return ResponseEntity.ok(factureService.getById(id));
@@ -177,6 +215,27 @@ public class FactureStructureController {
     @PostMapping("/{id}/rejeter")
     public ResponseEntity<FactureStructure> rejeter(@PathVariable String id, @RequestBody ValidationRequest request) {
         return ResponseEntity.ok(factureService.rejeter(id, request != null ? request.getCommentaire() : null));
+    }
+
+    @PostMapping("/{id}/valider-poste")
+    public ResponseEntity<FactureStructure> validerPoste(@PathVariable String id, @RequestBody(required = false) ValidationRequest request) {
+        return ResponseEntity.ok(factureService.validerPoste(id, request != null ? request.getCommentaire() : null));
+    }
+
+    @PostMapping("/{id}/rejeter-poste")
+    public ResponseEntity<FactureStructure> rejeterPoste(@PathVariable String id, @RequestBody ValidationRequest request) {
+        return ResponseEntity.ok(factureService.rejeterPoste(id, request != null ? request.getCommentaire() : null));
+    }
+
+    /**
+     * Purge les factures de structure restées en brouillon (jamais envoyées).
+     * Déclaré AVANT /{id} : sans cela « brouillons » serait capté comme un identifiant.
+     */
+    @DeleteMapping("/brouillons")
+    public ResponseEntity<java.util.Map<String, Integer>> purgerBrouillons(
+            @RequestParam(required = false) String structureId) {
+        int supprimees = factureService.purgerBrouillons(structureId);
+        return ResponseEntity.ok(java.util.Map.of("supprimees", supprimees));
     }
 
     @DeleteMapping("/{id}")

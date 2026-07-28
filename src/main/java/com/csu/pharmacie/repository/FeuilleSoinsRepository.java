@@ -17,4 +17,10 @@ public interface FeuilleSoinsRepository extends JpaRepository<FeuilleSoins, Stri
     List<FeuilleSoins> findByStructureSanitaireId(String structureSanitaireId);
     List<FeuilleSoins> findByLettreGarantieId(String lettreGarantieId);
     long countByCreatedBy(String createdBy);
+    long countByStructureSanitaireIdIn(Collection<String> structureSanitaireIds);
+
+    /** Nombre de feuilles par créateur, en une seule requête (stats agents). */
+    @org.springframework.data.jpa.repository.Query(
+            "SELECT f.createdBy, COUNT(f) FROM FeuilleSoins f WHERE f.createdBy IN :createurs GROUP BY f.createdBy")
+    List<Object[]> countParCreateur(@org.springframework.data.repository.query.Param("createurs") Collection<String> createurs);
 }

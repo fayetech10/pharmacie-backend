@@ -24,7 +24,11 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class FactureStructureExportServiceTest {
 
-    private final FactureStructureExportService service = new FactureStructureExportService();
+    // Repositories mockés : ils ne sont interrogés que lorsque la facture porte un
+    // structureSanitaireId, ce qui n'est pas le cas des factures de ce test.
+    private final FactureStructureExportService service = new FactureStructureExportService(
+            org.mockito.Mockito.mock(com.csu.pharmacie.repository.StructureSanitaireRepository.class),
+            org.mockito.Mockito.mock(com.csu.pharmacie.repository.RegionRepository.class));
 
     private FactureStructure factureAvecUneLigne(Regime regime, String sexe) {
         LigneFactureStructure ligne = LigneFactureStructure.builder()

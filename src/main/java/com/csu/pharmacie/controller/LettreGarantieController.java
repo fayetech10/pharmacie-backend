@@ -21,6 +21,7 @@ public class LettreGarantieController {
 
     private final LettreGarantieService lettreGarantieService;
     private final ExportService exportService;
+    private final com.csu.pharmacie.repository.UserRepository userRepository;
 
     @GetMapping
     public ResponseEntity<List<LettreGarantie>> getAll(
@@ -69,12 +70,37 @@ public class LettreGarantieController {
     @GetMapping("/{id}/export/pdf")
     public ResponseEntity<byte[]> exportPdf(@PathVariable String id) {
         LettreGarantie lettre = lettreGarantieService.getById(id);
-        byte[] pdfBytes = exportService.exportLettreGarantiePdf(lettre);
+        // Cachet et signature de l'agent qui a créé le dossier (paramétrage BCSU).
+        String cachet = null;
+        String signature = null;
+        if (lettre.getCreatedBy() != null) {
+            var createur = userRepository.findById(lettre.getCreatedBy()).orElse(null);
+            if (createur != null) {
+                cachet = createur.getCachetImage();
+                signature = createur.getSignatureImage();
+            }
+        }
+        byte[] pdfBytes = exportService.exportLettreGarantiePdf(lettre, cachet, signature);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_PDF);
         headers.setContentDispositionFormData("attachment", "Lettre_Garantie_" + lettre.getNumero() + ".pdf");
 
         return ResponseEntity.ok().headers(headers).body(pdfBytes);
+    }
+
+    /** Export Excel des patients enregistrés, avec les filtres de l'onglet (régime / mois / année). */
+    @GetMapping("/export/excel")
+    public ResponseEntity<byte[]> exportExcel(
+            @RequestParam(required = false) Integer mois,
+            @RequestParam(required = false) Integer annee,
+            @RequestParam(required = false) String regime) {
+        List<LettreGarantie> lettres = lettreGarantieService.getAllForCurrentUser(mois, annee, regime);
+        byte[] bytes = exportService.exportLettresGarantieExcel(lettres);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.valueOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+        headers.setContentDispositionFormData("attachment", "Patients_Enregistres.xlsx");
+        return ResponseEntity.ok().headers(headers).body(bytes);
     }
 }

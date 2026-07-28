@@ -29,6 +29,12 @@ public class Medicament {
     private String dci;
     private String classeTherapeutique;
     private String liste;
+    /**
+     * Prix de référence (FCFA), alimenté par l'import des éligibles.
+     * Sert à classer les équivalences du moins cher au plus cher ; null = prix inconnu,
+     * ces médicaments sont alors présentés en fin de liste.
+     */
+    private Double prixReference;
     @Enumerated(EnumType.STRING)
     private StatutMedicament statut;
     @Column(columnDefinition = "text")

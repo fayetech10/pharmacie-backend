@@ -27,6 +27,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -100,20 +102,25 @@ public class PharmacieService {
 
         pharmacie = pharmacieRepository.save(pharmacie);
 
-        // 2. Créer l'utilisateur Pharmacien associé
+        // 2. Créer l'utilisateur Pharmacien associé.
+        // Sans mot de passe fourni, on applique le mot de passe générique : il devra
+        // obligatoirement être changé à la première connexion.
         String rawPassword = password;
-        if (rawPassword == null || rawPassword.trim().isEmpty()) {
-            rawPassword = "password123"; // fallback par défaut
+        boolean motDePasseGenerique = (rawPassword == null || rawPassword.trim().isEmpty());
+        if (motDePasseGenerique) {
+            rawPassword = MOT_DE_PASSE_GENERIQUE;
         }
 
         User user = User.builder()
                 .nom(nom)
                 .prenom("Responsable")
                 .email(email)
+                .username(genererUsername(pharmacie.getRegionId(), code))
                 .password(passwordEncoder.encode(rawPassword))
                 .role(Role.PHARMACIEN)
                 .pharmacieId(pharmacie.getId())
                 .regionId(pharmacie.getRegionId())
+                .mustChangePassword(motDePasseGenerique)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .actif(true)
@@ -252,6 +259,95 @@ public class PharmacieService {
         } catch (Exception e) {
             log.error("Erreur lors de la lecture du fichier Excel des pharmacies", e);
             throw new RuntimeException("Fichier Excel illisible : " + e.getMessage(), e);
+        }
+    }
+
+    /** Mot de passe attribué par défaut à la création en masse (à changer à la 1re connexion). */
+    public static final String MOT_DE_PASSE_GENERIQUE = "csu2026";
+
+    /**
+     * Identifiant de connexion tenant compte de la région : {CODE_REGION}.{CODE_PHARMACIE}
+     * (ex. DK.PH001). Un suffixe numérique est ajouté en cas de collision.
+     */
+    private String genererUsername(String regionId, String codePharmacie) {
+        String codeRegion = regionRepository.findById(regionId)
+                .map(Region::getCode)
+                .filter(c -> c != null && !c.isBlank())
+                .orElse("CSU");
+
+        String base = (normaliser(codeRegion) + "." + normaliser(codePharmacie)).toLowerCase();
+        String candidat = base;
+        int suffixe = 1;
+        while (userRepository.existsByUsernameIgnoreCase(candidat)) {
+            candidat = base + suffixe++;
+        }
+        return candidat;
+    }
+
+    /** Ne conserve que les caractères alphanumériques (les séparateurs cassent l'identifiant). */
+    private String normaliser(String valeur) {
+        return valeur == null ? "" : valeur.replaceAll("[^A-Za-z0-9]", "");
+    }
+
+    /**
+     * Export Excel des pharmacies avec leurs identifiants de connexion, destiné à être
+     * remis aux officines après un import en masse. Le mot de passe n'est jamais stocké
+     * en clair : la colonne indique le mot de passe générique tant qu'il n'a pas été changé.
+     */
+    public byte[] exporterPharmaciesExcel() {
+        List<Pharmacie> pharmacies = getAllPharmacies();
+
+        try (Workbook workbook = new XSSFWorkbook();
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+
+            Sheet sheet = workbook.createSheet("Pharmacies");
+
+            XSSFCellStyle headerStyle = (XSSFCellStyle) workbook.createCellStyle();
+            XSSFFont headerFont = (XSSFFont) workbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+
+            String[] colonnes = {
+                    "Code", "Nom", "Région", "Email (connexion)", "Username (connexion)",
+                    "Mot de passe", "Statut du mot de passe", "Actif"
+            };
+            Row header = sheet.createRow(0);
+            for (int c = 0; c < colonnes.length; c++) {
+                org.apache.poi.ss.usermodel.Cell cell = header.createCell(c);
+                cell.setCellValue(colonnes[c]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            Map<String, Region> regionsParId = regionRepository.findAll().stream()
+                    .collect(Collectors.toMap(Region::getId, r -> r, (a, b) -> a));
+
+            int ligne = 1;
+            for (Pharmacie p : pharmacies) {
+                User compte = p.getResponsableId() != null
+                        ? userRepository.findById(p.getResponsableId()).orElse(null)
+                        : null;
+                boolean aChanger = compte != null && Boolean.TRUE.equals(compte.getMustChangePassword());
+
+                Region region = regionsParId.get(p.getRegionId());
+                Row row = sheet.createRow(ligne++);
+                row.createCell(0).setCellValue(p.getCode() != null ? p.getCode() : "");
+                row.createCell(1).setCellValue(p.getNom() != null ? p.getNom() : "");
+                row.createCell(2).setCellValue(region != null && region.getNom() != null ? region.getNom() : "");
+                row.createCell(3).setCellValue(p.getEmail() != null ? p.getEmail() : "");
+                row.createCell(4).setCellValue(compte != null && compte.getUsername() != null ? compte.getUsername() : "");
+                row.createCell(5).setCellValue(aChanger ? MOT_DE_PASSE_GENERIQUE : "(personnalisé)");
+                row.createCell(6).setCellValue(aChanger ? "À changer à la première connexion" : "Déjà changé");
+                row.createCell(7).setCellValue(p.isActif() ? "Oui" : "Non");
+            }
+
+            for (int c = 0; c < colonnes.length; c++) {
+                sheet.autoSizeColumn(c);
+            }
+
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException("Impossible de générer l'export Excel : " + e.getMessage(), e);
         }
     }
 

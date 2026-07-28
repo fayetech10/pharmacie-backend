@@ -11,14 +11,15 @@ import java.util.List;
 
 /**
  * Supprime les contraintes CHECK obsolètes générées par Hibernate pour les colonnes
- * enum {@code regime}.
+ * enum : {@code regime}, {@code role} (users) et {@code statut} (medicaments).
  *
  * <p>Hibernate crée, à la première génération du schéma, une contrainte
- * {@code CHECK (regime IN (...valeurs de l'enum...))}. Avec {@code ddl-auto: update},
- * cette contrainte n'est jamais mise à jour : lorsque l'énumération {@code Regime}
- * évolue (nouveaux régimes), l'insertion d'un enregistrement avec un régime récent
- * échoue (violation de contrainte). La validation reste assurée côté application par
- * l'enum Java, donc on peut retirer ces CHECK figées en toute sécurité.
+ * {@code CHECK (colonne IN (...valeurs de l'enum...))}. Avec {@code ddl-auto: update},
+ * cette contrainte n'est jamais mise à jour : lorsque l'énumération Java évolue
+ * (nouveau régime, nouveau rôle, statut {@code NON_REPERTORIE} des médicaments),
+ * l'insertion d'un enregistrement portant une valeur récente échoue (violation de
+ * contrainte). La validation reste assurée côté application par l'enum Java, donc on
+ * peut retirer ces CHECK figées en toute sécurité.
  *
  * <p>Exécuté après l'initialisation du schéma ; idempotent (sans contrainte obsolète,
  * il ne fait rien) et sans effet destructif sur les données.
@@ -31,7 +32,7 @@ public class RegimeCheckConstraintCleaner implements CommandLineRunner {
 
     /** Tables portant une colonne enum {@code regime}. */
     private static final List<String> TABLES = List.of(
-            "PATIENTS", "LETTRES_GARANTIE", "FACTURES_STRUCTURE", "FEUILLES_SOINS", "BONS_COMMANDE");
+            "PATIENTS", "LETTRES_GARANTIE", "FACTURES_STRUCTURE", "FEUILLES_SOINS", "BONS_COMMANDE", "CONSTATS");
 
     private final JdbcTemplate jdbc;
 
@@ -46,19 +47,30 @@ public class RegimeCheckConstraintCleaner implements CommandLineRunner {
         }
 
         for (String table : TABLES) {
-            for (String name : findRegimeCheckConstraints(table)) {
-                try {
-                    jdbc.execute("ALTER TABLE " + table + " DROP CONSTRAINT IF EXISTS \"" + name + "\"");
-                    log.info("Contrainte CHECK « regime » obsolète supprimée sur {} : {}", table, name);
-                } catch (Exception e) {
-                    log.warn("Suppression impossible de la contrainte {} sur {} : {}", name, table, e.getMessage());
-                }
+            supprimerCheckObsoletes(table, "%REGIME%", "regime");
+        }
+
+        // Statut des médicaments : l'énumération a gagné NON_REPERTORIE (médicament ajouté
+        // par un pharmacien). La CHECK figée sur (ELIGIBLE, EXCLU) refuserait l'insertion.
+        // Filtre sur « ELIGIBLE » (valeur de l'enum) : sans ambiguïté avec les contraintes
+        // NOT NULL que PostgreSQL expose aussi dans CHECK_CONSTRAINTS.
+        supprimerCheckObsoletes("MEDICAMENTS", "%ELIGIBLE%", "statut");
+    }
+
+    /** Supprime les contraintes CHECK d'une table dont la clause correspond au motif donné. */
+    private void supprimerCheckObsoletes(String table, String motifClause, String libelle) {
+        for (String name : findCheckConstraints(table, motifClause)) {
+            try {
+                jdbc.execute("ALTER TABLE " + table + " DROP CONSTRAINT IF EXISTS \"" + name + "\"");
+                log.info("Contrainte CHECK « {} » obsolète supprimée sur {} : {}", libelle, table, name);
+            } catch (Exception e) {
+                log.warn("Suppression impossible de la contrainte {} sur {} : {}", name, table, e.getMessage());
             }
         }
     }
 
-    /** Contraintes CHECK d'une table dont la clause référence la colonne « regime ». */
-    private List<String> findRegimeCheckConstraints(String table) {
+    /** Contraintes CHECK d'une table dont la clause correspond au motif SQL LIKE fourni. */
+    private List<String> findCheckConstraints(String table, String motifClause) {
         try {
             return jdbc.queryForList(
                     "SELECT tc.CONSTRAINT_NAME " +
@@ -67,11 +79,11 @@ public class RegimeCheckConstraintCleaner implements CommandLineRunner {
                     "  ON tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME " +
                     " AND tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA " +
                     "WHERE tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = 'CHECK' " +
-                    "  AND UPPER(cc.CHECK_CLAUSE) LIKE '%REGIME%'",
-                    String.class, table);
+                    "  AND UPPER(cc.CHECK_CLAUSE) LIKE ?",
+                    String.class, table, motifClause);
         } catch (Exception e) {
             // Table absente ou SGBD ne supportant pas cette vue : on ignore (best effort).
-            log.debug("Recherche des CHECK « regime » ignorée pour {} : {}", table, e.getMessage());
+            log.debug("Recherche des CHECK {} ignorée pour {} : {}", motifClause, table, e.getMessage());
             return List.of();
         }
     }

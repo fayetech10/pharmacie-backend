@@ -28,6 +28,7 @@ public class PatientService {
     private final FactureRepository factureRepository;
     private final FactureStructureRepository factureStructureRepository;
     private final FeuilleSoinsRepository feuilleSoinsRepository;
+    private final NumeroSequenceService numeroSequenceService;
 
     private User getCurrentUser() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -54,7 +55,15 @@ public class PatientService {
         for (Patient p : patientRepository.findByNomContainingIgnoreCaseOrPrenomContainingIgnoreCase(q, q)) {
             resultats.put(p.getId(), p);
         }
-        return new ArrayList<>(resultats.values());
+        List<Patient> patients = new ArrayList<>(resultats.values());
+
+        // Agent BCSU : restreint aux patients de son périmètre (lui-même + collègues de sa structure).
+        User user = getCurrentUser();
+        if (user.getRole() == Role.BCSU) {
+            Set<String> visibles = createurIdsVisiblesParBcsu(user);
+            patients.removeIf(p -> p.getCreatedBy() == null || !visibles.contains(p.getCreatedBy()));
+        }
+        return patients;
     }
 
     /**
@@ -66,12 +75,42 @@ public class PatientService {
         if (user.getRole() == Role.STRUCTURE_SANITAIRE && user.getStructureSanitaireId() != null) {
             return patientRepository.findDistinctByStructureSanitaireId(user.getStructureSanitaireId());
         }
+        // Agent BCSU : ne voit que les patients qu'il a créés ou ceux de ses collègues
+        // rattachés à la même structure sanitaire (et non tous les patients du système).
+        if (user.getRole() == Role.BCSU) {
+            return patientRepository.findByCreatedByIn(createurIdsVisiblesParBcsu(user));
+        }
         return patientRepository.findAll();
     }
 
+    /**
+     * Ids des utilisateurs dont un agent BCSU peut voir les patients : lui-même et ses
+     * collègues rattachés à la même structure sanitaire. Sans rattachement, il ne voit
+     * que ses propres patients.
+     */
+    private Set<String> createurIdsVisiblesParBcsu(User user) {
+        Set<String> ids = new HashSet<>();
+        ids.add(user.getId());
+        String structureId = user.getStructureSanitaireId();
+        if (structureId != null && !structureId.isBlank()) {
+            for (User collegue : userRepository.findByStructureSanitaireId(structureId)) {
+                ids.add(collegue.getId());
+            }
+        }
+        return ids;
+    }
+
     public Patient getById(String id) {
-        return patientRepository.findById(id)
+        Patient patient = patientRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Patient non trouvé"));
+        // Agent BCSU : ne peut consulter/gérer qu'un patient de son périmètre (structure).
+        User user = getCurrentUser();
+        if (user.getRole() == Role.BCSU
+                && (patient.getCreatedBy() == null
+                    || !createurIdsVisiblesParBcsu(user).contains(patient.getCreatedBy()))) {
+            throw new ForbiddenException("Accès refusé : ce patient n'appartient pas à votre structure");
+        }
+        return patient;
     }
 
     /**
@@ -229,7 +268,7 @@ public class PatientService {
         Patient savedPatient = patientRepository.save(patient);
 
         // 1. Générer automatiquement la lettre de garantie (directement avec le statut EMISE)
-        String lgNumero = genererNumeroUniqueLG();
+        String lgNumero = genererNumeroUniqueLG(user);
         LettreGarantie lettre = LettreGarantie.builder()
                 .numero(lgNumero)
                 .patientId(savedPatient.getId())
@@ -299,9 +338,13 @@ public class PatientService {
         return savedPatient;
     }
 
-    private String genererNumeroUniqueLG() {
+    /**
+     * Numéro LG codifié séquentiel = {type}-{initiales structure}-{séquence 4 chiffres}
+     * (ex: G-DKCS-0001), au même format que celui de LettreGarantieService.
+     */
+    private String genererNumeroUniqueLG(User user) {
         for (int i = 0; i < 5; i++) {
-            String candidat = com.csu.pharmacie.utils.NumeroGenerator.generer("LG");
+            String candidat = numeroSequenceService.prochainNumeroCodifie("G", user);
             if (lettreGarantieRepository.findByNumero(candidat).isEmpty()) {
                 return candidat;
             }

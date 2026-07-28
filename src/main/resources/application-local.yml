@@ -25,3 +25,8 @@ spring:
   sql:
     init:
       mode: never
+  # Console H2 activée en dev local (profil jamais utilisé en production) :
+  # http://localhost:8080/h2-console — JDBC URL identique à celle du datasource ci-dessus.
+  h2:
+    console:
+      enabled: true

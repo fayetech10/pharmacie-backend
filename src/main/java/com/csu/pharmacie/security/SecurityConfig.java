@@ -38,7 +38,9 @@ public class SecurityConfig {
       http
               .cors(cors -> cors.configure(http))
               .csrf(AbstractHttpConfigurer::disable)
-              .headers(headers -> headers.frameOptions(frame -> frame.disable()))
+              // SAMEORIGIN (et non disable) : suffit à la console H2 locale dans une frame,
+              // tout en protégeant l'application du clickjacking depuis un site tiers.
+              .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
               .authorizeHttpRequests(auth -> auth
                       // Console H2 en local
                       .requestMatchers(antMatcher("/h2-console/**")).permitAll()
@@ -60,6 +62,11 @@ public class SecurityConfig {
                       // Liste des agents BCSU (formulaire structures sanitaires) : ouverte au SR.
                       // DOIT précéder la règle générale /api/users/** (premier matcher gagnant).
                       .requestMatchers(antMatcher(HttpMethod.GET, "/api/users/bcsu")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
+                      // Paramétrage cachet/signature : lecture par tout utilisateur authentifié
+                      // (affichage sur la LG), mise à jour par l'agent lui-même (BCSU).
+                      // DOIT précéder la règle générale /api/users/**.
+                      .requestMatchers(antMatcher(HttpMethod.GET, "/api/users/*/parametrage")).authenticated()
+                      .requestMatchers(antMatcher(HttpMethod.PUT, "/api/users/parametrage")).hasAnyRole("BCSU", "ADMIN")
                       .requestMatchers(antMatcher("/api/users/**")).hasAnyRole("ADMIN", "SERVICE_REGIONAL")
                       // Gestion des pharmacies : réservée au Service Régional et à l'Admin
                       // (le Service Central peut consulter via GET mais pas créer/modifier/supprimer)
@@ -76,6 +83,9 @@ public class SecurityConfig {
                       .requestMatchers(antMatcher(HttpMethod.PUT, "/api/lettres-garantie/**")).hasAnyRole("BCSU", "ADMIN")
                       .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/lettres-garantie/**")).hasAnyRole("BCSU", "ADMIN")
                       .requestMatchers(antMatcher(HttpMethod.POST, "/api/bons-commande/**")).hasAnyRole("BCSU", "ADMIN")
+                      // Constats d'activité : saisie et suppression réservées aux agents BCSU (contrôle fin en service).
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/constats/**")).hasAnyRole("BCSU", "ADMIN")
+                      .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/constats/**")).hasAnyRole("BCSU", "ADMIN")
                       // Structures sanitaires : gestion réservée au Service Régional et à l'Admin (comme les pharmacies).
                       .requestMatchers(antMatcher(HttpMethod.POST, "/api/structures-sanitaires/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
                       .requestMatchers(antMatcher(HttpMethod.PUT, "/api/structures-sanitaires/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
@@ -85,6 +95,9 @@ public class SecurityConfig {
                       // Facturation des structures : création/envoi (structure) + validation/rejet (SR) ; contrôle fin en service.
                       .requestMatchers(antMatcher(HttpMethod.POST, "/api/factures-structure/**")).hasAnyRole("STRUCTURE_SANITAIRE", "SERVICE_REGIONAL", "ADMIN")
                       .requestMatchers(antMatcher(HttpMethod.PUT, "/api/factures-structure/**")).hasAnyRole("STRUCTURE_SANITAIRE", "ADMIN")
+                      // Purge des brouillons depuis le paramétrage des structures : ouverte au SR
+                      // (déclarée avant la règle générale, plus spécifique d'abord).
+                      .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/factures-structure/brouillons")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
                       .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/factures-structure/**")).hasAnyRole("STRUCTURE_SANITAIRE", "ADMIN")
                       .anyRequest().authenticated()
               )

@@ -17,7 +17,6 @@ import com.csu.pharmacie.exception.ForbiddenException;
 import com.csu.pharmacie.exception.ResourceNotFoundException;
 import com.csu.pharmacie.repository.LettreGarantieRepository;
 import com.csu.pharmacie.repository.PatientRepository;
-import com.csu.pharmacie.repository.StructureSanitaireRepository;
 import com.csu.pharmacie.repository.UserRepository;
 import com.csu.pharmacie.utils.NumeroGenerator;
 import lombok.RequiredArgsConstructor;
@@ -39,8 +38,8 @@ public class LettreGarantieService {
     private final LettreGarantieRepository lettreGarantieRepository;
     private final PatientRepository patientRepository;
     private final UserRepository userRepository;
-    private final StructureSanitaireRepository structureSanitaireRepository;
     private final com.csu.pharmacie.repository.FeuilleSoinsRepository feuilleSoinsRepository;
+    private final NumeroSequenceService numeroSequenceService;
 
     private User getCurrentUser() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -152,6 +151,7 @@ public class LettreGarantieService {
         checkAgentAutorise(user);
 
         Patient patient = resoudrePatient(request, user);
+        validerReglesRegime(request, patient);
 
         // Vérification de la validité de 30 jours (Désactivée suite à la demande client)
         // LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
@@ -168,19 +168,11 @@ public class LettreGarantieService {
 
         List<PrestationGarantie> prestations = mapPrestations(request.getPrestations(), request.getRegime());
 
-        String structureNom = "";
-        if (user.getStructureSanitaireId() != null) {
-            structureNom = structureSanitaireRepository.findById(user.getStructureSanitaireId())
-                    .map(StructureSanitaire::getNom).orElse("");
-        } else {
-            List<StructureSanitaire> structures = structureSanitaireRepository.findByBcsuId(user.getId());
-            if (!structures.isEmpty()) {
-                structureNom = structures.get(0).getNom();
-            }
-        }
+        String structureNom = numeroSequenceService.structureDeLAgent(user)
+                .map(StructureSanitaire::getNom).orElse("");
 
         LettreGarantie lettre = LettreGarantie.builder()
-                .numero(genererNumeroUnique("LG"))
+                .numero(genererNumeroUnique("G", user))
                 .patientId(patient.getId())
                 .patientNom(patient.getNom())
                 .patientPrenom(patient.getPrenom())
@@ -226,6 +218,7 @@ public class LettreGarantieService {
         }
 
         Patient patient = resoudrePatient(request, user);
+        validerReglesRegime(request, patient);
         List<PrestationGarantie> prestations = mapPrestations(request.getPrestations(), request.getRegime());
 
         lettre.setPatientId(patient.getId());
@@ -310,6 +303,45 @@ public class LettreGarantieService {
         }
     }
 
+    /** Âge minimal du régime Sésame (personnes âgées). */
+    private static final int AGE_MIN_SESAME = 60;
+    /** Âge maximal (exclu) du régime Enfants 0-5 ans. */
+    private static final int AGE_MAX_ZERO_CINQ_ANS = 6;
+
+    /**
+     * Contrôles d'éligibilité par régime (cahier des charges) :
+     *  - Enfants 0-5 ans : date de naissance obligatoire, âge strictement inférieur à 6 ans ;
+     *  - Sésame : date de naissance obligatoire, âge supérieur ou égal à 60 ans ;
+     *  - Césarienne : le bénéficiaire doit être de sexe féminin.
+     */
+    private void validerReglesRegime(LettreGarantieRequest request, Patient patient) {
+        Regime regime = request.getRegime();
+        LocalDate dateNaissance = request.getDateNaissance() != null
+                ? request.getDateNaissance() : patient.getDateNaissance();
+        String sexe = (request.getSexe() != null && !request.getSexe().isBlank())
+                ? request.getSexe() : patient.getSexe();
+
+        if (regime == Regime.ZERO_CINQ_ANS || regime == Regime.SESAME) {
+            if (dateNaissance == null) {
+                throw new BusinessException("La date de naissance est obligatoire pour le régime "
+                        + (regime == Regime.SESAME ? "Sésame" : "Enfants 0-5 ans"));
+            }
+            int age = Period.between(dateNaissance, LocalDate.now()).getYears();
+            if (regime == Regime.ZERO_CINQ_ANS && age >= AGE_MAX_ZERO_CINQ_ANS) {
+                throw new BusinessException("Régime Enfants 0-5 ans : l'âge du bénéficiaire (" + age
+                        + " ans) doit être compris entre 0 et 5 ans");
+            }
+            if (regime == Regime.SESAME && age < AGE_MIN_SESAME) {
+                throw new BusinessException("Régime Sésame : le bénéficiaire doit avoir au moins "
+                        + AGE_MIN_SESAME + " ans (âge calculé : " + age + " ans)");
+            }
+        }
+
+        if (regime == Regime.CESARIENNE && !"F".equalsIgnoreCase(sexe == null ? "" : sexe.trim())) {
+            throw new BusinessException("Régime Césarienne : le bénéficiaire doit être de sexe féminin");
+        }
+    }
+
     /** Réutilise le patient existant si patientId fourni, sinon en crée un nouveau à partir des champs inline. */
     private Patient resoudrePatient(LettreGarantieRequest request, User user) {
         if (request.getPatientId() != null && !request.getPatientId().isBlank()) {
@@ -369,9 +401,13 @@ public class LettreGarantieService {
         return prestations.stream().mapToDouble(PrestationGarantie::getMontantSencsu).sum();
     }
 
-    private String genererNumeroUnique(String prefixe) {
+    /**
+     * Numéro LG codifié séquentiel = {type}-{initiales structure}-{séquence 4 chiffres}
+     * (ex: G-DKCS-0001). Regénéré tant qu'il n'est pas unique.
+     */
+    private String genererNumeroUnique(String typeDocument, User user) {
         for (int i = 0; i < 5; i++) {
-            String candidat = NumeroGenerator.generer(prefixe);
+            String candidat = numeroSequenceService.prochainNumeroCodifie(typeDocument, user);
             if (lettreGarantieRepository.findByNumero(candidat).isEmpty()) {
                 return candidat;
             }

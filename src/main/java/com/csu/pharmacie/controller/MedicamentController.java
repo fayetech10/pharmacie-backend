@@ -1,6 +1,7 @@
 package com.csu.pharmacie.controller;
 
 import com.csu.pharmacie.entity.Medicament;
+import com.csu.pharmacie.entity.StatutMedicament;
 import com.csu.pharmacie.service.MedicamentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,32 @@ public class MedicamentController {
     @GetMapping("/search")
     public ResponseEntity<List<Medicament>> search(@RequestParam String query) {
         return ResponseEntity.ok(medicamentService.search(query));
+    }
+
+    /**
+     * Équivalences d'un médicament (même DCI), du moins cher au plus cher.
+     * Ex. GET /api/medicaments/equivalents?nom=DOLIPRANE 500
+     */
+    @GetMapping("/equivalents")
+    public ResponseEntity<List<Medicament>> getEquivalents(@RequestParam String nom) {
+        return ResponseEntity.ok(medicamentService.getEquivalents(nom));
+    }
+
+    /** Médicaments non répertoriés (ajoutés par des pharmaciens), à classer par la SEN-CSU. */
+    @GetMapping("/non-repertories")
+    public ResponseEntity<List<Medicament>> getNonRepertories() {
+        return ResponseEntity.ok(medicamentService.getNonRepertories());
+    }
+
+    /**
+     * Classe un médicament non répertorié en ÉLIGIBLE ou EXCLU : incrémente la liste concernée.
+     * Ex. POST /api/medicaments/{id}/classer?statut=ELIGIBLE
+     */
+    @PostMapping("/{id}/classer")
+    public ResponseEntity<Medicament> classer(@PathVariable String id,
+                                              @RequestParam StatutMedicament statut,
+                                              @RequestParam(required = false) String motif) {
+        return ResponseEntity.ok(medicamentService.classer(id, statut, motif));
     }
 
     @PostMapping

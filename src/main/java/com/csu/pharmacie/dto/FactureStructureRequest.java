@@ -10,9 +10,16 @@ import java.util.List;
 
 @Data
 public class FactureStructureRequest {
-    /** Numéro de la lettre de garantie source (le dossier patient en est dérivé). */
-    @NotBlank(message = "Le numéro de lettre de garantie est obligatoire")
+    /** Numéro de la lettre de garantie source (facultatif pour les Postes de Santé). */
     private String lettreGarantieNumero;
+
+    /** Le régime (obligatoire pour les Postes de Santé qui n'ont pas de lettre de garantie). */
+    private com.csu.pharmacie.entity.Regime regime;
+
+    /** Champs patient (obligatoires pour les Postes de Santé qui n'ont pas de LG). */
+    private String patientNom;
+    private String patientPrenom;
+    private String patientTelephone;
 
     /** Feuille de soins déposée par le patient à rattacher à cette facture (fin du circuit). */
     private String feuilleSoinsId;

@@ -1,5 +1,6 @@
 package com.csu.pharmacie.service;
 
+import com.csu.pharmacie.dto.ChangePasswordRequest;
 import com.csu.pharmacie.dto.LoginRequest;
 import com.csu.pharmacie.dto.LoginResponse;
 import com.csu.pharmacie.dto.RegisterRequest;
@@ -27,6 +28,7 @@ import java.time.format.DateTimeFormatter;
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final com.csu.pharmacie.repository.StructureSanitaireRepository structureRepository;
     private final PointageRepository pointageRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
@@ -39,11 +41,23 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
         );
 
+        // Le champ « email » de la requête peut porter l'email OU le username attribué à l'import.
         User user = userRepository.findByEmail(request.getEmail())
+                .or(() -> userRepository.findByUsernameIgnoreCase(request.getEmail()))
                 .orElseThrow(() -> new ResourceNotFoundException("Utilisateur non trouvé"));
 
         UserDetails userDetails = userDetailsService.loadUserByUsername(request.getEmail());
         String token = jwtUtil.generateToken(userDetails);
+
+        String structType = null;
+        String structNom = null;
+        if (user.getRole() == Role.STRUCTURE_SANITAIRE && user.getStructureSanitaireId() != null) {
+            com.csu.pharmacie.entity.StructureSanitaire ss = structureRepository.findById(user.getStructureSanitaireId()).orElse(null);
+            if (ss != null) {
+                structType = ss.getTypeStructure();
+                structNom = ss.getNom();
+            }
+        }
 
         Pointage pointage = controlerPointage(user);
 
@@ -51,12 +65,16 @@ public class AuthService {
                 .token(token)
                 .userId(user.getId())
                 .email(user.getEmail())
+                .username(user.getUsername())
+                .mustChangePassword(Boolean.TRUE.equals(user.getMustChangePassword()))
                 .nom(user.getNom())
                 .prenom(user.getPrenom())
                 .role(user.getRole())
                 .pharmacieId(user.getPharmacieId())
                 .regionId(user.getRegionId())
                 .structureSanitaireId(user.getStructureSanitaireId())
+                .structureType(structType)
+                .structureNom(structNom)
                 .pointageHeure(pointage != null && pointage.getHeureArrivee() != null
                         ? pointage.getHeureArrivee().format(DateTimeFormatter.ofPattern("HH:mm"))
                         : null)
@@ -94,6 +112,30 @@ public class AuthService {
         return pointageRepository.save(pointage);
     }
 
+
+    /**
+     * Changement de mot de passe par l'utilisateur connecté. Lève le drapeau
+     * mustChangePassword posé à la création en masse (mot de passe générique).
+     */
+    public void changePassword(ChangePasswordRequest request) {
+        String email = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication().getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("Utilisateur non trouvé"));
+
+        if (!passwordEncoder.matches(request.getAncienMotDePasse(), user.getPassword())) {
+            throw new com.csu.pharmacie.exception.BusinessException("Mot de passe actuel incorrect");
+        }
+        if (passwordEncoder.matches(request.getNouveauMotDePasse(), user.getPassword())) {
+            throw new com.csu.pharmacie.exception.BusinessException(
+                    "Le nouveau mot de passe doit être différent de l'ancien");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNouveauMotDePasse()));
+        user.setMustChangePassword(false);
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
+    }
 
     public User register(RegisterRequest request) {
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {

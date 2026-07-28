@@ -81,41 +81,55 @@ public class FactureStructureService {
 
     public List<FactureStructure> getAllForCurrentUser(Integer mois, Integer annee, String regimeStr) {
         User user = getCurrentUser();
-        List<FactureStructure> factures;
-        
-        if (user.getRole() == Role.ADMIN || user.getRole() == Role.SERVICE_CENTRAL) {
-            factures = factureRepository.findAll();
-        } else if (user.getRole() == Role.SERVICE_REGIONAL) {
-            // Le SR ne voit que les factures transmises (pas les brouillons des structures).
-            factures = factureRepository.findByRegionId(user.getRegionId()).stream()
-                    .filter(f -> f.getStatut() != StatutFacture.BROUILLON)
-                    .collect(Collectors.toList());
-        } else if (user.getRole() == Role.STRUCTURE_SANITAIRE) {
-            factures = factureRepository.findByStructureSanitaireId(user.getStructureSanitaireId());
-        } else {
-            factures = new ArrayList<>();
-        }
-        
-        if (mois != null && mois > 0) {
-            factures = factures.stream().filter(f -> f.getMois() == mois).collect(Collectors.toList());
-        }
-        if (annee != null && annee > 0) {
-            factures = factures.stream().filter(f -> f.getAnnee() == annee).collect(Collectors.toList());
-        }
+
+        // Filtres appliqués en base (0 = pas de filtre ; regime null = tous).
+        int m = (mois != null && mois > 0) ? mois : 0;
+        int a = (annee != null && annee > 0) ? annee : 0;
+        Regime regime = null;
         if (regimeStr != null && !regimeStr.trim().isEmpty()) {
             try {
-                Regime regimeEnum = Regime.valueOf(regimeStr.trim().toUpperCase());
-                factures = factures.stream().filter(f -> f.getRegime() == regimeEnum).collect(Collectors.toList());
+                regime = Regime.valueOf(regimeStr.trim().toUpperCase());
             } catch (IllegalArgumentException e) {
-                // Ignore invalid regime string
+                // Régime inconnu : on ignore le filtre (comportement historique).
             }
         }
-        
-        return factures;
+
+        if (user.getRole() == Role.ADMIN || user.getRole() == Role.SERVICE_CENTRAL) {
+            return factureRepository.findAllFiltre(m, a, regime);
+        }
+        if (user.getRole() == Role.SERVICE_REGIONAL) {
+            // Le SR ne voit que les factures transmises et validées par le niveau de base
+            // (exclusion BROUILLON / SOUMISE_CS / REJETEE_CS faite dans la requête).
+            return factureRepository.findVisiblesParRegionFiltre(user.getRegionId(), m, a, regime);
+        }
+        if (user.getRole() == Role.STRUCTURE_SANITAIRE) {
+            // Ses propres factures uniquement (les factures des PS rattachés sont dans l'onglet dédié)
+            return factureRepository.findByStructureFiltre(user.getStructureSanitaireId(), m, a, regime);
+        }
+        return new ArrayList<>();
     }
     
     public List<FactureStructure> getAllForCurrentUser() {
         return getAllForCurrentUser(null, null, null);
+    }
+
+    /**
+     * Identifiants + statuts des factures structure visibles par l'utilisateur, pour les
+     * badges de notification. Même périmètre que {@link #getAllForCurrentUser()}, mais en
+     * projection : aucune colonne JSONB (lignes, historique) n'est désérialisée.
+     */
+    public List<com.csu.pharmacie.dto.FactureStatutDto> getStatutsPourBadges() {
+        User user = getCurrentUser();
+        if (user.getRole() == Role.ADMIN || user.getRole() == Role.SERVICE_CENTRAL) {
+            return factureRepository.findAllStatuts();
+        }
+        if (user.getRole() == Role.SERVICE_REGIONAL) {
+            return factureRepository.findStatutsVisiblesParRegion(user.getRegionId());
+        }
+        if (user.getRole() == Role.STRUCTURE_SANITAIRE) {
+            return factureRepository.findStatutsByStructure(user.getStructureSanitaireId());
+        }
+        return new ArrayList<>();
     }
 
     public FactureStructure getById(String id) {
@@ -123,7 +137,8 @@ public class FactureStructureService {
                 .orElseThrow(() -> new ResourceNotFoundException("Facture non trouvée"));
         User user = getCurrentUser();
         if (user.getRole() == Role.STRUCTURE_SANITAIRE
-                && !java.util.Objects.equals(facture.getStructureSanitaireId(), user.getStructureSanitaireId())) {
+                && !java.util.Objects.equals(facture.getStructureSanitaireId(), user.getStructureSanitaireId())
+                && !estFactureDePosteRattache(facture, user)) {
             throw new ForbiddenException("Accès refusé");
         }
         if (user.getRole() == Role.SERVICE_REGIONAL
@@ -164,7 +179,27 @@ public class FactureStructureService {
             throw new ForbiddenException("Seule une structure sanitaire peut créer une facture");
         }
         StructureSanitaire structure = getCurrentStructure(user);
-        LettreGarantie lettre = rechercherLettre(request.getLettreGarantieNumero());
+
+        LettreGarantie lettre = null;
+        Regime regimeFacture;
+        boolean isPS = structure.getTypeStructure() != null && structure.getTypeStructure().equalsIgnoreCase("PS");
+
+        if (request.getLettreGarantieNumero() != null && !request.getLettreGarantieNumero().isBlank()) {
+            lettre = rechercherLettre(request.getLettreGarantieNumero());
+            regimeFacture = lettre.getRegime();
+        } else {
+            if (!isPS) {
+                throw new BusinessException("Le numéro de lettre de garantie est obligatoire pour cette structure");
+            }
+            if (request.getRegime() == null) {
+                throw new BusinessException("Le régime est obligatoire pour l'ajout d'un patient sans lettre de garantie");
+            }
+            if (request.getPatientNom() == null || request.getPatientNom().isBlank() ||
+                request.getPatientPrenom() == null || request.getPatientPrenom().isBlank()) {
+                throw new BusinessException("Le nom et prénom du patient sont obligatoires");
+            }
+            regimeFacture = request.getRegime();
+        }
 
         // Note: La vérification de doublon (dejaFacturee) a été retirée pour permettre 
         // au patient d'utiliser la même lettre de garantie plusieurs fois dans le délai de 30 jours.
@@ -173,11 +208,13 @@ public class FactureStructureService {
         int currentMois = now.getMonthValue();
         int currentAnnee = now.getYear();
 
-        // Récupère ou crée la facture mensuelle globale pour ce régime (brouillon, envoyée ou rejetée)
+        // Les saisies du mois sont COMPILÉES dans la facture mensuelle par régime,
+        // qui reste en BROUILLON : l'envoi au Service Régional est une action
+        // explicite (bouton « Envoyer » / envoi mensuel), jamais automatique.
         FactureStructure facture = factureRepository
-                .findByStructureSanitaireIdAndRegimeAndMoisAndAnnee(structure.getId(), lettre.getRegime(), currentMois, currentAnnee)
+                .findByStructureSanitaireIdAndRegimeAndMoisAndAnnee(structure.getId(), regimeFacture, currentMois, currentAnnee)
                 .stream()
-                .filter(f -> f.getStatut() == StatutFacture.BROUILLON || f.getStatut() == StatutFacture.ENVOYEE || f.getStatut() == StatutFacture.REJETEE_SR)
+                .filter(f -> f.getStatut() == StatutFacture.BROUILLON || f.getStatut() == StatutFacture.REJETEE_SR || f.getStatut() == StatutFacture.REJETEE_CS)
                 .findFirst()
                 .orElse(null);
 
@@ -190,46 +227,54 @@ public class FactureStructureService {
                     .structureNom(structure.getNom())
                     .regionId(structure.getRegionId())
                     .bcsuId(structure.getBcsuId())
-                    .regime(lettre.getRegime())
+                    .regime(regimeFacture)
                     .mois(currentMois)
                     .annee(currentAnnee)
                     .lignes(new ArrayList<>())
-                    .statut(StatutFacture.ENVOYEE)
+                    .statut(StatutFacture.BROUILLON)
                     .documentsComplementaires(new ArrayList<>())
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .createdBy(user.getId())
                     .build();
-        } else {
-            // Si la facture existante était en brouillon ou rejetée, elle passe automatiquement en ENVOYEE
-            facture.setStatut(StatutFacture.ENVOYEE);
         }
 
-        List<LigneFactureStructure> nouvellesLignes = mapLignes(request.getLignes(), lettre.getRegime());
+        List<LigneFactureStructure> nouvellesLignes = mapLignes(request.getLignes(), regimeFacture);
         
         // On enrichit chaque ligne avec les métadonnées du patient et de la lettre de garantie
         for (LigneFactureStructure ligne : nouvellesLignes) {
-            ligne.setLettreGarantieId(lettre.getId());
-            ligne.setLettreGarantieNumero(lettre.getNumero());
-            ligne.setPatientId(lettre.getPatientId());
-            ligne.setPatientNom(lettre.getPatientNom());
-            ligne.setPatientPrenom(lettre.getPatientPrenom());
-            ligne.setPatientTelephone(lettre.getPatientTelephone());
-            ligne.setPatientDateNaissance(request.getPatientDateNaissance() != null
-                    ? request.getPatientDateNaissance() : lettre.getPatientDateNaissance());
-            ligne.setPatientSexe(request.getPatientSexe() != null && !request.getPatientSexe().isBlank()
-                    ? request.getPatientSexe() : lettre.getPatientSexe());
-            ligne.setPatientAdresse(request.getPatientAdresse());
-            String mat = request.getPatientMatricule() != null && !request.getPatientMatricule().isBlank()
-                    ? request.getPatientMatricule() : lettre.getCniNumeroOcr();
-            if (mat == null || mat.trim().isEmpty()) {
-                if (lettre.getPatientId() != null) {
-                    mat = patientRepository.findById(lettre.getPatientId())
-                            .map(p -> (p.getNumeroAssure() != null && !p.getNumeroAssure().trim().isEmpty()) ? p.getNumeroAssure() : p.getNumeroCni())
-                            .orElse(null);
+            if (lettre != null) {
+                ligne.setLettreGarantieId(lettre.getId());
+                ligne.setLettreGarantieNumero(lettre.getNumero());
+                ligne.setPatientId(lettre.getPatientId());
+                ligne.setPatientNom(lettre.getPatientNom());
+                ligne.setPatientPrenom(lettre.getPatientPrenom());
+                ligne.setPatientTelephone(lettre.getPatientTelephone());
+                ligne.setPatientDateNaissance(request.getPatientDateNaissance() != null
+                        ? request.getPatientDateNaissance() : lettre.getPatientDateNaissance());
+                ligne.setPatientSexe(request.getPatientSexe() != null && !request.getPatientSexe().isBlank()
+                        ? request.getPatientSexe() : lettre.getPatientSexe());
+                
+                String mat = request.getPatientMatricule() != null && !request.getPatientMatricule().isBlank()
+                        ? request.getPatientMatricule() : lettre.getCniNumeroOcr();
+                if (mat == null || mat.trim().isEmpty()) {
+                    if (lettre.getPatientId() != null) {
+                        mat = patientRepository.findById(lettre.getPatientId())
+                                .map(p -> (p.getNumeroAssure() != null && !p.getNumeroAssure().trim().isEmpty()) ? p.getNumeroAssure() : p.getNumeroCni())
+                                .orElse(null);
+                    }
                 }
+                ligne.setPatientMatricule(mat);
+            } else {
+                ligne.setPatientNom(request.getPatientNom());
+                ligne.setPatientPrenom(request.getPatientPrenom());
+                ligne.setPatientTelephone(request.getPatientTelephone());
+                ligne.setPatientDateNaissance(request.getPatientDateNaissance());
+                ligne.setPatientSexe(request.getPatientSexe());
+                ligne.setPatientMatricule(request.getPatientMatricule());
             }
-            ligne.setPatientMatricule(mat);
+            
+            ligne.setPatientAdresse(request.getPatientAdresse());
             ligne.setPatientNumeroCni(request.getPatientNumeroCni());
             
             ligne.setService(request.getService());
@@ -265,12 +310,12 @@ public class FactureStructureService {
             mergedDocs.add(DocumentComplementaire.builder()
                     .titre("Ticket de caisse")
                     .image(request.getTicketCaisse())
-                    .lettreGarantieNumero(lettre.getNumero())
+                    .lettreGarantieNumero(lettre != null ? lettre.getNumero() : null)
                     .build());
         }
         if (request.getDocumentsComplementaires() != null) {
             for (com.csu.pharmacie.dto.DocumentComplementaireDto dto : request.getDocumentsComplementaires()) {
-                dto.setLettreGarantieNumero(lettre.getNumero());
+                dto.setLettreGarantieNumero(lettre != null ? lettre.getNumero() : null);
             }
             mergedDocs.addAll(mapDocuments(request.getDocumentsComplementaires()));
         }
@@ -279,9 +324,12 @@ public class FactureStructureService {
         facture.setUpdatedAt(LocalDateTime.now());
 
         if (isNew) {
-            ajouterHistorique(facture, user, StatutFacture.ENVOYEE, "Création et envoi automatique de la facture mensuelle " + lettre.getRegime().name());
+            ajouterHistorique(facture, user, facture.getStatut(), "Création de la facture mensuelle " + regimeFacture.name() + " (brouillon, envoi manuel)");
         } else {
-            ajouterHistorique(facture, user, StatutFacture.ENVOYEE, "Ajout automatique de prestation pour le patient " + lettre.getPatientPrenom() + " " + lettre.getPatientNom());
+            String patientLabel = lettre != null
+                    ? (lettre.getPatientPrenom() + " " + lettre.getPatientNom())
+                    : (request.getPatientPrenom() + " " + request.getPatientNom());
+            ajouterHistorique(facture, user, facture.getStatut(), "Ajout de prestation pour le patient " + patientLabel);
         }
         
         FactureStructure enregistree = factureRepository.save(facture);
@@ -290,9 +338,11 @@ public class FactureStructureService {
         if (request.getFeuilleSoinsId() != null && !request.getFeuilleSoinsId().isBlank()) {
             com.csu.pharmacie.entity.FeuilleSoins feuille =
                     feuilleSoinsService.lierFacture(request.getFeuilleSoinsId(), enregistree, user);
-            for (LigneFactureStructure l : enregistree.getLignes()) {
-                if (lettre.getId().equals(l.getLettreGarantieId())) {
-                    l.setFeuilleSoinsNumero(feuille.getNumero());
+            if (lettre != null) {
+                for (LigneFactureStructure l : enregistree.getLignes()) {
+                    if (lettre.getId().equals(l.getLettreGarantieId())) {
+                        l.setFeuilleSoinsNumero(feuille.getNumero());
+                    }
                 }
             }
             enregistree = factureRepository.save(enregistree);
@@ -369,9 +419,9 @@ public class FactureStructureService {
         facture.setMontantTotalSencsu(sommeSencsu(lignes));
         facture.setTicketCaisse(request.getTicketCaisse());
         facture.setDocumentsComplementaires(mapDocuments(request.getDocumentsComplementaires()));
-        facture.setStatut(StatutFacture.ENVOYEE); // Passe automatiquement en ENVOYEE
+        // Pas d'envoi automatique : la facture garde son statut, l'envoi reste une action explicite.
         facture.setUpdatedAt(LocalDateTime.now());
-        ajouterHistorique(facture, user, StatutFacture.ENVOYEE, "Modification globale de la facture mensuelle et envoi automatique");
+        ajouterHistorique(facture, user, facture.getStatut(), "Modification de la facture mensuelle");
         
         FactureStructure enregistree = factureRepository.save(facture);
         
@@ -388,17 +438,29 @@ public class FactureStructureService {
         if (user.getRole() != Role.STRUCTURE_SANITAIRE) {
             throw new ForbiddenException("Seule une structure sanitaire peut envoyer une facture");
         }
-        boolean correction = facture.getStatut() == StatutFacture.REJETEE_SR;
+        boolean correction = facture.getStatut() == StatutFacture.REJETEE_SR || facture.getStatut() == StatutFacture.REJETEE_CS;
         if (facture.getStatut() != StatutFacture.BROUILLON && !correction) {
             throw new BusinessException("La facture n'est pas dans un état permettant l'envoi");
         }
         if (correction) {
             facture.setCommentaireRejet(null);
         }
-        facture.setStatut(StatutFacture.ENVOYEE);
+
+        StructureSanitaire structure = getCurrentStructure(user);
+        StatutFacture nouveauStatut;
+        String actionHistorique;
+
+        if ("PS".equalsIgnoreCase(structure.getTypeStructure())) {
+            nouveauStatut = StatutFacture.SOUMISE_CS;
+            actionHistorique = correction ? "Renvoi après correction (au CS)" : "Envoi au centre de santé rattaché";
+        } else {
+            nouveauStatut = StatutFacture.ENVOYEE;
+            actionHistorique = correction ? "Renvoi après correction (au SR)" : "Envoi au service régional";
+        }
+
+        facture.setStatut(nouveauStatut);
         facture.setUpdatedAt(LocalDateTime.now());
-        ajouterHistorique(facture, user, StatutFacture.ENVOYEE,
-                correction ? "Renvoi après correction" : "Envoi au service régional");
+        ajouterHistorique(facture, user, nouveauStatut, actionHistorique);
         return factureRepository.save(facture);
     }
 
@@ -412,19 +474,36 @@ public class FactureStructureService {
         if (user.getRole() != Role.STRUCTURE_SANITAIRE) {
             throw new ForbiddenException("Seule une structure sanitaire peut envoyer ses factures");
         }
+        StructureSanitaire structure = getCurrentStructure(user);
+
         List<FactureStructure> brouillons = factureRepository
                 .findByStructureSanitaireId(user.getStructureSanitaireId()).stream()
-                .filter(f -> f.getStatut() == StatutFacture.BROUILLON
+                .filter(f -> (f.getStatut() == StatutFacture.BROUILLON || f.getStatut() == StatutFacture.REJETEE_SR || f.getStatut() == StatutFacture.REJETEE_CS)
                         && f.getRegime() == regime && f.getMois() == mois && f.getAnnee() == annee)
                 .collect(Collectors.toList());
         if (brouillons.isEmpty()) {
             throw new BusinessException("Aucune facture en brouillon à envoyer pour ce groupe");
         }
         for (FactureStructure facture : brouillons) {
-            facture.setStatut(StatutFacture.ENVOYEE);
+            boolean correction = facture.getStatut() == StatutFacture.REJETEE_SR || facture.getStatut() == StatutFacture.REJETEE_CS;
+            if (correction) {
+                facture.setCommentaireRejet(null);
+            }
+            
+            StatutFacture nouveauStatut;
+            String actionHistorique;
+
+            if ("PS".equalsIgnoreCase(structure.getTypeStructure())) {
+                nouveauStatut = StatutFacture.SOUMISE_CS;
+                actionHistorique = correction ? "Renvoi de la facture mensuelle après correction (au CS)" : "Envoi de la facture mensuelle au centre de santé rattaché";
+            } else {
+                nouveauStatut = StatutFacture.ENVOYEE;
+                actionHistorique = correction ? "Renvoi de la facture mensuelle après correction (au SR)" : "Envoi de la facture mensuelle au service régional";
+            }
+
+            facture.setStatut(nouveauStatut);
             facture.setUpdatedAt(LocalDateTime.now());
-            ajouterHistorique(facture, user, StatutFacture.ENVOYEE,
-                    "Envoi groupé de la facture mensuelle au service régional");
+            ajouterHistorique(facture, user, nouveauStatut, actionHistorique);
         }
         return factureRepository.saveAll(brouillons);
     }
@@ -436,6 +515,41 @@ public class FactureStructureService {
             throw new BusinessException("Seule une facture en brouillon peut être supprimée");
         }
         factureRepository.deleteById(id);
+    }
+
+    /**
+     * Purge les factures de structure encore en BROUILLON (jamais envoyées).
+     * Réservé au service régional (sur sa région) et à l'administrateur.
+     * Les factures déjà transmises ne sont jamais concernées.
+     *
+     * @param structureId limite la purge à une structure (facultatif)
+     * @return nombre de brouillons supprimés
+     */
+    @Transactional
+    public int purgerBrouillons(String structureId) {
+        User user = getCurrentUser();
+        if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.ADMIN) {
+            throw new ForbiddenException("Seul le service régional ou un administrateur peut purger les brouillons");
+        }
+
+        List<FactureStructure> candidates;
+        if (structureId != null && !structureId.isBlank()) {
+            candidates = factureRepository.findByStructureSanitaireId(structureId);
+        } else if (user.getRole() == Role.SERVICE_REGIONAL) {
+            candidates = factureRepository.findByRegionId(user.getRegionId());
+        } else {
+            candidates = factureRepository.findAll();
+        }
+
+        // Un SR ne purge jamais hors de sa région, même si un structureId lui est passé.
+        List<FactureStructure> brouillons = candidates.stream()
+                .filter(f -> f.getStatut() == StatutFacture.BROUILLON)
+                .filter(f -> user.getRole() != Role.SERVICE_REGIONAL
+                        || java.util.Objects.equals(f.getRegionId(), user.getRegionId()))
+                .toList();
+
+        factureRepository.deleteAll(brouillons);
+        return brouillons.size();
     }
 
     /** Service Régional : ENVOYEE -> VALIDEE_SR. */
@@ -475,6 +589,202 @@ public class FactureStructureService {
         facture.setUpdatedAt(LocalDateTime.now());
         ajouterHistorique(facture, user, StatutFacture.REJETEE_SR, motif);
         return factureRepository.save(facture);
+    }
+
+    /** Centre de Santé : SOUMISE_CS -> ENVOYEE (transmise au SR). */
+    @Transactional
+    public FactureStructure validerPoste(String id, String commentaire) {
+        FactureStructure facture = getById(id);
+        User user = getCurrentUser();
+        if (user.getRole() != Role.STRUCTURE_SANITAIRE) {
+            throw new ForbiddenException("Seul un centre de santé peut valider une facture de poste");
+        }
+        if (!estFactureDePosteRattache(facture, user)) {
+            throw new ForbiddenException("Cette facture n'appartient pas à un de vos postes rattachés");
+        }
+        if (facture.getStatut() != StatutFacture.SOUMISE_CS) {
+            throw new BusinessException("Seules les factures soumises au centre de santé peuvent être validées");
+        }
+        facture.setStatut(StatutFacture.ENVOYEE);
+        facture.setUpdatedAt(LocalDateTime.now());
+        ajouterHistorique(facture, user, StatutFacture.ENVOYEE,
+                (commentaire != null && !commentaire.isBlank()) ? commentaire : "Validée par le centre de santé et transmise au SR");
+        return factureRepository.save(facture);
+    }
+
+    /** Centre de Santé : SOUMISE_CS -> REJETEE_CS (renvoyée au PS pour correction). */
+    @Transactional
+    public FactureStructure rejeterPoste(String id, String motif) {
+        FactureStructure facture = getById(id);
+        User user = getCurrentUser();
+        if (user.getRole() != Role.STRUCTURE_SANITAIRE) {
+            throw new ForbiddenException("Seul un centre de santé peut rejeter une facture de poste");
+        }
+        if (!estFactureDePosteRattache(facture, user)) {
+            throw new ForbiddenException("Cette facture n'appartient pas à un de vos postes rattachés");
+        }
+        if (facture.getStatut() != StatutFacture.SOUMISE_CS) {
+            throw new BusinessException("Seules les factures soumises au centre de santé peuvent être rejetées");
+        }
+        if (motif == null || motif.isBlank()) {
+            throw new BusinessException("Le motif de rejet est obligatoire");
+        }
+        facture.setStatut(StatutFacture.REJETEE_CS);
+        facture.setCommentaireRejet(motif);
+        facture.setUpdatedAt(LocalDateTime.now());
+        ajouterHistorique(facture, user, StatutFacture.REJETEE_CS, motif);
+        return factureRepository.save(facture);
+    }
+
+    /** Facture (hors brouillon) émise par un poste de santé rattaché à la structure de l'utilisateur. */
+    private boolean estFactureDePosteRattache(FactureStructure facture, User user) {
+        if (facture.getStatut() == StatutFacture.BROUILLON || facture.getStructureSanitaireId() == null) {
+            return false;
+        }
+        return structureRepository.findById(facture.getStructureSanitaireId())
+                .map(s -> java.util.Objects.equals(s.getStructureRattachementId(), user.getStructureSanitaireId()))
+                .orElse(false);
+    }
+
+    /** La facture est-elle encore modifiable par la structure (avant envoi / après rejet) ? */
+    private void checkModifiable(FactureStructure facture, User user) {
+        if (user.getRole() != Role.STRUCTURE_SANITAIRE) {
+            throw new ForbiddenException("Seule une structure sanitaire peut modifier ses saisies");
+        }
+        if (facture.getStatut() != StatutFacture.BROUILLON
+                && facture.getStatut() != StatutFacture.REJETEE_SR
+                && facture.getStatut() != StatutFacture.REJETEE_CS) {
+            throw new BusinessException("Les saisies ne peuvent être modifiées ou supprimées qu'avant l'envoi mensuel (ou après un rejet)");
+        }
+    }
+
+    private void recalculerTotaux(FactureStructure facture) {
+        List<LigneFactureStructure> lignes = facture.getLignes() == null ? new ArrayList<>() : facture.getLignes();
+        facture.setMontantTotal(sommeMontant(lignes));
+        facture.setMontantTotalBeneficiaire(sommeBeneficiaire(lignes));
+        facture.setMontantTotalSencsu(sommeSencsu(lignes));
+    }
+
+    /**
+     * Supprime la ligne d'un patient (toutes ses prestations, identifiées par le numéro
+     * de lettre de garantie) d'une facture mensuelle avant l'envoi, avec ses pièces jointes.
+     */
+    @Transactional
+    public FactureStructure supprimerPatient(String factureId, String lettreNumero) {
+        FactureStructure facture = getById(factureId);
+        User user = getCurrentUser();
+        checkModifiable(facture, user);
+
+        List<LigneFactureStructure> restantes = facture.getLignes().stream()
+                .filter(l -> !java.util.Objects.equals(l.getLettreGarantieNumero(), lettreNumero))
+                .collect(Collectors.toList());
+        if (restantes.size() == facture.getLignes().size()) {
+            throw new ResourceNotFoundException("Aucune saisie trouvée pour cette lettre de garantie");
+        }
+        facture.setLignes(restantes);
+        if (facture.getDocumentsComplementaires() != null) {
+            facture.setDocumentsComplementaires(facture.getDocumentsComplementaires().stream()
+                    .filter(d -> !java.util.Objects.equals(d.getLettreGarantieNumero(), lettreNumero))
+                    .collect(Collectors.toList()));
+        }
+        recalculerTotaux(facture);
+        facture.setUpdatedAt(LocalDateTime.now());
+        ajouterHistorique(facture, user, facture.getStatut(), "Suppression de la saisie du patient (LG " + lettreNumero + ")");
+        FactureStructure enregistree = factureRepository.save(facture);
+        feuilleSoinsService.synchroniserAvecFacture(enregistree);
+        return enregistree;
+    }
+
+    /** Modifie une prestation (ligne) d'une facture mensuelle avant l'envoi. */
+    @Transactional
+    public FactureStructure modifierLigne(String factureId, int index, LigneFactureStructureDto dto) {
+        FactureStructure facture = getById(factureId);
+        User user = getCurrentUser();
+        checkModifiable(facture, user);
+
+        if (facture.getLignes() == null || index < 0 || index >= facture.getLignes().size()) {
+            throw new ResourceNotFoundException("Ligne de facture introuvable");
+        }
+        LigneFactureStructure ligne = facture.getLignes().get(index);
+        double tauxBenef = facture.getRegime().tauxBeneficiaire();
+        double tauxSencsu = facture.getRegime().tauxSencsu();
+
+        if (dto.getDesignation() != null && !dto.getDesignation().isBlank()) {
+            ligne.setDesignation(dto.getDesignation());
+        }
+        if (dto.getCodeActe() != null) ligne.setCodeActe(dto.getCodeActe());
+        if (dto.getDatePriseEnCharge() != null) ligne.setDatePriseEnCharge(dto.getDatePriseEnCharge());
+        ligne.setQuantite(dto.getQuantite() > 0 ? dto.getQuantite() : ligne.getQuantite());
+        if (dto.getPrixUnitaire() >= 0) ligne.setPrixUnitaire(dto.getPrixUnitaire());
+        double montant = ligne.getQuantite() * ligne.getPrixUnitaire();
+        ligne.setMontant(montant);
+        ligne.setMontantBeneficiaire(montant * tauxBenef);
+        ligne.setMontantSencsu(montant * tauxSencsu);
+
+        recalculerTotaux(facture);
+        facture.setUpdatedAt(LocalDateTime.now());
+        ajouterHistorique(facture, user, facture.getStatut(), "Modification d'une prestation (" + ligne.getDesignation() + ")");
+        FactureStructure enregistree = factureRepository.save(facture);
+        feuilleSoinsService.synchroniserAvecFacture(enregistree);
+        return enregistree;
+    }
+
+    /** Supprime une prestation (ligne) d'une facture mensuelle avant l'envoi. */
+    @Transactional
+    public FactureStructure supprimerLigne(String factureId, int index) {
+        FactureStructure facture = getById(factureId);
+        User user = getCurrentUser();
+        checkModifiable(facture, user);
+
+        if (facture.getLignes() == null || index < 0 || index >= facture.getLignes().size()) {
+            throw new ResourceNotFoundException("Ligne de facture introuvable");
+        }
+        LigneFactureStructure supprimee = facture.getLignes().remove(index);
+        recalculerTotaux(facture);
+        facture.setUpdatedAt(LocalDateTime.now());
+        ajouterHistorique(facture, user, facture.getStatut(), "Suppression d'une prestation (" + supprimee.getDesignation() + ")");
+        FactureStructure enregistree = factureRepository.save(facture);
+        feuilleSoinsService.synchroniserAvecFacture(enregistree);
+        return enregistree;
+    }
+
+    /**
+     * Factures des postes de santé polarisés (rattachés) par la structure de
+     * l'utilisateur courant. Seules les factures ENVOYÉES (et suivantes) sont
+     * visibles : les brouillons restent privés au poste.
+     */
+    public List<FactureStructure> getFacturesPostesRattaches(Integer mois, Integer annee, String regimeStr) {
+        User user = getCurrentUser();
+        if (user.getRole() != Role.STRUCTURE_SANITAIRE) {
+            throw new ForbiddenException("Réservé aux structures sanitaires");
+        }
+        StructureSanitaire structure = getCurrentStructure(user);
+        List<String> posteIds = structureRepository.findByStructureRattachementId(structure.getId()).stream()
+                .map(StructureSanitaire::getId)
+                .collect(Collectors.toList());
+        if (posteIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<FactureStructure> factures = posteIds.stream()
+                .flatMap(id -> factureRepository.findByStructureSanitaireId(id).stream())
+                .filter(f -> f.getStatut() != StatutFacture.BROUILLON)
+                .collect(Collectors.toList());
+
+        if (mois != null && mois > 0) {
+            factures = factures.stream().filter(f -> f.getMois() == mois).collect(Collectors.toList());
+        }
+        if (annee != null && annee > 0) {
+            factures = factures.stream().filter(f -> f.getAnnee() == annee).collect(Collectors.toList());
+        }
+        if (regimeStr != null && !regimeStr.trim().isEmpty()) {
+            try {
+                Regime regimeEnum = Regime.valueOf(regimeStr.trim().toUpperCase());
+                factures = factures.stream().filter(f -> f.getRegime() == regimeEnum).collect(Collectors.toList());
+            } catch (IllegalArgumentException e) {
+                // régime invalide : ignoré
+            }
+        }
+        return factures;
     }
 
     // ----- Helpers -----

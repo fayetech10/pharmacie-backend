@@ -15,7 +15,6 @@ import com.csu.pharmacie.exception.ResourceNotFoundException;
 import com.csu.pharmacie.repository.BonCommandeRepository;
 import com.csu.pharmacie.repository.LettreGarantieRepository;
 import com.csu.pharmacie.repository.UserRepository;
-import com.csu.pharmacie.utils.NumeroGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -34,6 +33,7 @@ public class BonCommandeService {
     private final LettreGarantieRepository lettreGarantieRepository;
     private final UserRepository userRepository;
     private final com.csu.pharmacie.repository.PatientRepository patientRepository;
+    private final NumeroSequenceService numeroSequenceService;
 
     private User getCurrentUser() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -192,7 +192,7 @@ public class BonCommandeService {
         }
 
         BonCommande bon = BonCommande.builder()
-                .numero(genererNumeroUnique("BC"))
+                .numero(genererNumeroUnique("C", user))
                 .lettreGarantieId(lettre.getId())
                 .lettreGarantieNumero(lettre.getNumero())
                 .patientNom(lettre.getPatientNom())
@@ -233,9 +233,10 @@ public class BonCommandeService {
         return bonCommandeRepository.save(bon);
     }
 
-    private String genererNumeroUnique(String prefixe) {
+    /** Numéro codifié séquentiel (ex: C-DKCS-0001) ; séquence 4 chiffres permanente commune au couple région+type, la valeur avance à chaque essai. */
+    private String genererNumeroUnique(String typeDocument, User user) {
         for (int i = 0; i < 5; i++) {
-            String candidat = NumeroGenerator.generer(prefixe);
+            String candidat = numeroSequenceService.prochainNumeroCodifie(typeDocument, user);
             if (bonCommandeRepository.findByNumero(candidat).isEmpty()) {
                 return candidat;
             }

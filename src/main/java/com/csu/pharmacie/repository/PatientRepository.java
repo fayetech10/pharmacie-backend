@@ -18,6 +18,15 @@ public interface PatientRepository extends JpaRepository<Patient, String> {
     List<Patient> findDistinctByStructureSanitaireId(String structureId);
 
     long countByCreatedBy(String createdBy);
+    long countByCreatedByIn(Collection<String> createdBy);
+
+    /** Patients créés par un ensemble d'utilisateurs (périmètre BCSU par structure). */
+    List<Patient> findByCreatedByIn(Collection<String> createdBy);
+
+    /** Nombre de patients par créateur, en une seule requête (stats agents). */
+    @org.springframework.data.jpa.repository.Query(
+            "SELECT p.createdBy, COUNT(p) FROM Patient p WHERE p.createdBy IN :createurs GROUP BY p.createdBy")
+    List<Object[]> countParCreateur(@org.springframework.data.repository.query.Param("createurs") Collection<String> createurs);
     List<Patient> findByNumeroAssureIn(Collection<String> numeroAssures);
     List<Patient> findByNumeroCniIn(Collection<String> numeroCnis);
 }

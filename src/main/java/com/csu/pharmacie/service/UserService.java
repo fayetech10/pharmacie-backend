@@ -12,7 +12,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +27,30 @@ public class UserService {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("Utilisateur non trouvé"));
+    }
+
+    /** Paramétrage (cachet + signature) d'un agent, pour affichage sur les lettres de garantie. */
+    public Map<String, String> getParametrage(String userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Utilisateur non trouvé"));
+        Map<String, String> result = new HashMap<>();
+        result.put("cachetImage", user.getCachetImage());
+        result.put("signatureImage", user.getSignatureImage());
+        return result;
+    }
+
+    /** Met à jour le cachet et la signature de l'utilisateur courant (paramétrage BCSU). */
+    public Map<String, String> updateParametrage(Map<String, String> request) {
+        User current = getCurrentUser();
+        if (request.containsKey("cachetImage")) {
+            current.setCachetImage(request.get("cachetImage"));
+        }
+        if (request.containsKey("signatureImage")) {
+            current.setSignatureImage(request.get("signatureImage"));
+        }
+        current.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(current);
+        return getParametrage(current.getId());
     }
 
     public List<User> getAllUsers() {
@@ -69,6 +95,14 @@ public class UserService {
             throw new ConflictException("Email déjà utilisé");
         }
 
+        // Le mot de passe n'est optionnel qu'en modification (DTO partagé) :
+        // à la création, son absence doit produire une erreur claire, pas un 500.
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new com.csu.pharmacie.exception.BusinessException("Le mot de passe est obligatoire à la création");
+        }
+
+        validerIdentite(request);
+
         User user = User.builder()
                 .nom(request.getNom())
                 .prenom(request.getPrenom())
@@ -86,6 +120,19 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    /**
+     * nom/prénom sont facultatifs pour un Service Régional (compte de région, sans
+     * personne physique) mais obligatoires pour tous les autres rôles. Aligne le backend
+     * sur le formulaire, qui masque ces champs uniquement pour le Service Régional.
+     */
+    private void validerIdentite(UserRequest request) {
+        if (request.getRole() != Role.SERVICE_REGIONAL
+                && (request.getNom() == null || request.getNom().isBlank()
+                    || request.getPrenom() == null || request.getPrenom().isBlank())) {
+            throw new com.csu.pharmacie.exception.BusinessException("Le nom et le prénom sont obligatoires");
+        }
+    }
+
     public User updateUser(String id, UserRequest request) {
         User current = getCurrentUser();
         User user = userRepository.findById(id)
@@ -101,6 +148,7 @@ public class UserService {
             request.setRegionId(current.getRegionId());
         }
         
+        validerIdentite(request);
         user.setNom(request.getNom());
         user.setPrenom(request.getPrenom());
         

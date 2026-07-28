@@ -34,6 +34,12 @@ public class ExportService {
     private final RegionRepository regionRepository;
     private final com.csu.pharmacie.repository.FactureRepository factureRepository;
 
+    /** Encre bleue (#003399) des valeurs « manuscrites », comme le rendu web (.paper-dots). */
+    private static final BaseColor ENCRE_BLEUE = new BaseColor(0, 51, 153);
+    /** Police manuscrite Caveat embarquée, chargée une seule fois ; null si le .ttf n'est pas fourni. */
+    private static byte[] caveatTtf;
+    private static boolean caveatChecked;
+
     public byte[] exportExcel(List<Facture> factures) {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Factures");
@@ -236,7 +242,7 @@ public class ExportService {
             Row headersRow = sheet.createRow(10);
             String[] headers = {
                 "N°", "N° Bon", "Date", "Nom & Prénom", "Médicament",
-                "P.U.", "Qté", "Montant", "Part bénéf.", "Part SEN-CSU"
+                "P.U.", "Qté", "Montant", "Part bénéf.", "Part SEN-CSU", "Observation"
             };
             for (int i = 0; i < headers.length; i++) {
                 Cell cell = headersRow.createCell(i);
@@ -295,6 +301,14 @@ public class ExportService {
                 Cell csuCell = row.createCell(9);
                 csuCell.setCellFormula("H" + rowNum + "*0.5");
                 csuCell.setCellStyle(cellCenterStyle);
+
+                // Observation : signale les médicaments ajoutés par le pharmacien (non répertoriés).
+                // La SEN-CSU s'appuie sur cette colonne pour valider leur intégration ou les exclure.
+                Cell obsCell = row.createCell(10);
+                obsCell.setCellValue(ligne.isAjouteParPharmacien()
+                        ? "Médicament ajouté par le pharmacien — à valider par la SEN-CSU"
+                        : "");
+                obsCell.setCellStyle(cellLeftStyle);
             }
 
             // Totaux : sommes en formules (suivent les Montants/Parts recalculés).
@@ -323,6 +337,9 @@ public class ExportService {
             if (hasLignes) cellSumC.setCellFormula("SUM(J" + firstDataRow + ":J" + lastDataRow + ")");
             else cellSumC.setCellValue(sumCsu);
             cellSumC.setCellStyle(headerStyle);
+
+            // Bandeau vert continu jusqu'à la colonne Observation.
+            totalRow.createCell(10).setCellStyle(headerStyle);
 
             // 6. Encadré à droite (H & I & J)
             int boxStartRow = rowIdx + 2;
@@ -397,6 +414,8 @@ public class ExportService {
             for (int i = 0; i < 10; i++) {
                 sheet.autoSizeColumn(i);
             }
+            // Colonne Observation : largeur fixe (le texte d'alerte ne doit pas l'étirer démesurément).
+            sheet.setColumnWidth(10, 52 * 256);
 
             workbook.write(out);
             return out.toByteArray();
@@ -432,7 +451,7 @@ public class ExportService {
             // --- Onglet 1 : Pharmacies ---
             Sheet sheetPharma = workbook.createSheet("Pharmacies");
             Row headerPharma = sheetPharma.createRow(0);
-            String[] headersPharma = {"Pharmacie", "Mois/Année", "Date Facture", "N° Bon", "Patient", "Médicament", "P.U.", "Qté", "Montant Total", "Part SEN-CSU"};
+            String[] headersPharma = {"Pharmacie", "Mois/Année", "Date Facture", "N° Bon", "Patient", "Médicament", "P.U.", "Qté", "Montant Total", "Part SEN-CSU", "Observation"};
             for (int i = 0; i < headersPharma.length; i++) {
                 headerPharma.createCell(i).setCellValue(headersPharma[i]);
             }
@@ -455,6 +474,9 @@ public class ExportService {
                         double total = ligne.getQuantite() * ligne.getPrixUnitaire();
                         row.createCell(8).setCellValue(total);
                         row.createCell(9).setCellValue(total * 0.5); // 50% SEN-CSU en général pour pharmacie
+                        row.createCell(10).setCellValue(ligne.isAjouteParPharmacien()
+                                ? "Médicament ajouté par le pharmacien — à valider par la SEN-CSU"
+                                : "");
                     }
                 }
             }
@@ -687,9 +709,9 @@ public class ExportService {
             // 4. Tableau des lignes de facturation
             String[] headers = {
                 "N°", "N° Bon", "Date", "Nom & Prénom", "Médicament",
-                "P.U.", "Qté", "Montant", "Part bénéf.", "Part SEN-CSU"
+                "P.U.", "Qté", "Montant", "Part bénéf.", "Part SEN-CSU", "Observation"
             };
-            float[] columnWidths = {4f, 8f, 12f, 20f, 24f, 8f, 4f, 8f, 8f, 8f};
+            float[] columnWidths = {4f, 7f, 10f, 17f, 20f, 7f, 4f, 8f, 8f, 8f, 18f};
             PdfPTable table = new PdfPTable(headers.length);
             table.setWidthPercentage(100);
             table.setWidths(columnWidths);
@@ -727,6 +749,10 @@ public class ExportService {
                 addTableCell(table, formatNombre(total), Element.ALIGN_CENTER, normalFont, borderLight);
                 addTableCell(table, formatNombre(total * 0.5), Element.ALIGN_CENTER, normalFont, borderLight);
                 addTableCell(table, formatNombre(total * 0.5), Element.ALIGN_CENTER, normalFont, borderLight);
+                // Observation : signale à la SEN-CSU un médicament ajouté hors référentiel.
+                addTableCell(table, ligne.isAjouteParPharmacien()
+                        ? "Médicament ajouté par le pharmacien — à valider par la SEN-CSU" : "",
+                        Element.ALIGN_LEFT, normalFont, borderLight);
             }
 
             // Ligne de Totaux
@@ -766,6 +792,14 @@ public class ExportService {
             totalCsu.setBorderColor(borderLight);
             totalCsu.setBorderWidth(0.5f);
             table.addCell(totalCsu);
+
+            // Cellule vide sous la colonne Observation, pour fermer la ligne de totaux.
+            PdfPCell totalObservation = new PdfPCell(new Paragraph("", totalFont));
+            totalObservation.setBackgroundColor(csuGreen);
+            totalObservation.setPadding(6f);
+            totalObservation.setBorderColor(borderLight);
+            totalObservation.setBorderWidth(0.5f);
+            table.addCell(totalObservation);
 
             document.add(table);
 
@@ -823,7 +857,124 @@ public class ExportService {
 
     private static final String NUM_ENVOI_SR = "SR Thiès (77 762 63 29)";
 
+    /**
+     * QR code contenant le numéro du document : la structure sanitaire ou la pharmacie le
+     * scanne pour retrouver la lettre/le bon sans saisir le numéro à la main.
+     */
+    private Image qrCodeNumero(String numero, float taille) {
+        try {
+            BarcodeQRCode qr = new BarcodeQRCode(numero, 1, 1, null);
+            Image img = qr.getImage();
+            img.scaleAbsolute(taille, taille);
+            img.setAlignment(Element.ALIGN_CENTER);
+            return img;
+        } catch (Exception e) {
+            return null; // le PDF reste utilisable sans QR
+        }
+    }
+
+    /**
+     * Police « manuscrite » bleue (Caveat) pour les valeurs saisies, reproduisant le rendu
+     * web (.paper-dots). Repli automatique en Times italique bleu si la police n'est pas
+     * embarquée : déposer Caveat-Bold.ttf (ou Caveat.ttf) dans backend/src/main/resources/fonts/.
+     */
+    private Font manuscrite(float taille) {
+        if (!caveatChecked) {
+            caveatChecked = true;
+            for (String nom : new String[]{"fonts/Caveat-Bold.ttf", "fonts/Caveat.ttf",
+                    "fonts/Caveat-Regular.ttf", "Caveat-Bold.ttf", "Caveat.ttf"}) {
+                try {
+                    caveatTtf = new ClassPathResource(nom).getInputStream().readAllBytes();
+                    break;
+                } catch (Exception ignored) { /* nom suivant */ }
+            }
+        }
+        if (caveatTtf != null) {
+            try {
+                BaseFont bf = BaseFont.createFont("Caveat.ttf", BaseFont.IDENTITY_H, BaseFont.EMBEDDED, true, caveatTtf, null);
+                return new Font(bf, taille, Font.NORMAL, ENCRE_BLEUE);
+            } catch (Exception e) { /* repli ci-dessous */ }
+        }
+        return new Font(Font.FontFamily.TIMES_ROMAN, taille * 0.68f, Font.ITALIC, ENCRE_BLEUE);
+    }
+
+    /** Ligne de formulaire « label imprimé + valeur manuscrite bleue », comme .paper-row du site. */
+    private Paragraph champManuscrit(String label, String valeur, Font labelFont, float tailleValeur) {
+        Paragraph p = new Paragraph();
+        p.setLeading(tailleValeur * 1.25f);
+        p.setSpacingAfter(9f);
+        p.add(new Chunk(label + "  ", labelFont));
+        p.add(new Chunk(valeur == null ? "" : valeur, manuscrite(tailleValeur)));
+        return p;
+    }
+
     public byte[] exportLettreGarantiePdf(LettreGarantie lettre) {
+        return exportLettreGarantiePdf(lettre, null, null);
+    }
+
+    /**
+     * Export Excel des patients enregistrés (lettres de garantie), après filtrage
+     * par régime / mois / année dans l'onglet « Patients enregistrés » du BCSU.
+     */
+    public byte[] exportLettresGarantieExcel(List<LettreGarantie> lettres) {
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Patients enregistrés");
+
+            CellStyle headerStyle = workbook.createCellStyle();
+            org.apache.poi.ss.usermodel.Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+
+            String[] colonnes = {"N° Lettre", "Date", "Prénom", "Nom", "Sexe", "Date de naissance",
+                    "Téléphone", "Régime", "Statut", "Montant total", "Part SEN-CSU", "Structure"};
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < colonnes.length; i++) {
+                Cell cell = header.createCell(i);
+                cell.setCellValue(colonnes[i]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            DateTimeFormatter df = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            int r = 1;
+            for (LettreGarantie l : lettres) {
+                Row row = sheet.createRow(r++);
+                row.createCell(0).setCellValue(l.getNumero());
+                row.createCell(1).setCellValue(l.getCreatedAt() != null ? l.getCreatedAt().format(df) : "");
+                row.createCell(2).setCellValue(l.getPatientPrenom() != null ? l.getPatientPrenom() : "");
+                row.createCell(3).setCellValue(l.getPatientNom() != null ? l.getPatientNom() : "");
+                row.createCell(4).setCellValue(l.getPatientSexe() != null ? l.getPatientSexe() : "");
+                row.createCell(5).setCellValue(l.getPatientDateNaissance() != null ? l.getPatientDateNaissance().format(df) : "");
+                row.createCell(6).setCellValue(l.getPatientTelephone() != null ? l.getPatientTelephone() : "");
+                row.createCell(7).setCellValue(l.getRegime() != null ? l.getRegime().name() : "");
+                row.createCell(8).setCellValue(l.getStatut() != null ? l.getStatut().name() : "");
+                row.createCell(9).setCellValue(l.getMontantTotal());
+                row.createCell(10).setCellValue(l.getMontantTotalSencsu());
+                row.createCell(11).setCellValue(l.getStructureNom() != null ? l.getStructureNom() : "");
+            }
+            for (int i = 0; i < colonnes.length; i++) {
+                sheet.setColumnWidth(i, 20 * 256);
+            }
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException("Erreur lors de l'export Excel des patients enregistrés", e);
+        }
+    }
+
+    /** Image iText à partir d'une data-URL (paramétrage cachet/signature), null si illisible. */
+    private Image imageFromDataUrl(String dataUrl, float maxW, float maxH) {
+        if (dataUrl == null || dataUrl.isBlank()) return null;
+        try {
+            String base64 = dataUrl.contains(",") ? dataUrl.substring(dataUrl.indexOf(',') + 1) : dataUrl;
+            Image img = Image.getInstance(java.util.Base64.getDecoder().decode(base64));
+            img.scaleToFit(maxW, maxH);
+            return img;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public byte[] exportLettreGarantiePdf(LettreGarantie lettre, String cachetImage, String signatureImage) {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4, 42, 28, 42, 36);
             PdfWriter writer = PdfWriter.getInstance(document, out);
@@ -874,128 +1025,115 @@ public class ExportService {
             pMotto.setAlignment(Element.ALIGN_CENTER);
             pMotto.setSpacingBefore(12f);
             rightHeaderCell.addElement(pMotto);
+            Image qrLettre = qrCodeNumero(lettre.getNumero(), 74f);
+            if (qrLettre != null) {
+                qrLettre.setSpacingBefore(10f);
+                rightHeaderCell.addElement(qrLettre);
+                Paragraph pQrLabel = new Paragraph("Scanner pour retrouver le dossier",
+                        new Font(Font.FontFamily.HELVETICA, 7f, Font.ITALIC, textDark));
+                pQrLabel.setAlignment(Element.ALIGN_CENTER);
+                rightHeaderCell.addElement(pQrLabel);
+            }
             headerTable.addCell(rightHeaderCell);
 
             document.add(headerTable);
             document.add(new Paragraph(" \n"));
 
-            // 2. Numéro & Encadré Lettre de Garantie
-            PdfPTable titleTable = new PdfPTable(2);
-            titleTable.setWidthPercentage(75);
-            titleTable.setWidths(new float[]{3.1f, 5.2f});
-            titleTable.getDefaultCell().setBorder(PdfPCell.NO_BORDER);
-            titleTable.setHorizontalAlignment(Element.ALIGN_LEFT);
-
-            PdfPCell numCell = new PdfPCell();
-            numCell.setBorder(PdfPCell.NO_BORDER);
-            numCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            Paragraph pNum = new Paragraph();
-            pNum.add(new Chunk("N° ", new Font(Font.FontFamily.HELVETICA, 13, Font.BOLD, textDark)));
-            pNum.add(new Chunk(lettre.getNumero() + " ......................", new Font(Font.FontFamily.HELVETICA, 11, Font.ITALIC, textDark)));
-            pNum = new Paragraph();
-            pNum.add(new Chunk("N° ", new Font(Font.FontFamily.HELVETICA, 13, Font.BOLD, textDark)));
-            pNum.add(new Chunk(lettre.getNumero() + " ......................", new Font(Font.FontFamily.HELVETICA, 11, Font.ITALIC, textDark)));
-            numCell.addElement(pNum);
-            titleTable.addCell(numCell);
-
+            // 2. Encadré « LETTRE DE GARANTIE » centré (comme le site), puis N° en manuscrit
+            BaseColor bleuTitre = new BaseColor(43, 92, 143); // #2b5c8f (.paper-title-box)
+            PdfPTable titleTable = new PdfPTable(1);
+            titleTable.setWidthPercentage(46);
+            titleTable.setHorizontalAlignment(Element.ALIGN_CENTER);
             PdfPCell boxCell = new PdfPCell();
             boxCell.setBorder(PdfPCell.BOX);
-            boxCell.setBorderWidth(1.3f);
-            boxCell.setBorderColor(new BaseColor(30, 74, 104));
-            boxCell.setPaddingTop(8f);
-            boxCell.setPaddingBottom(8f);
+            boxCell.setBorderWidth(1.4f);
+            boxCell.setBorderColor(bleuTitre);
+            boxCell.setPaddingTop(7f);
+            boxCell.setPaddingBottom(7f);
             boxCell.setHorizontalAlignment(Element.ALIGN_CENTER);
-            boxCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            Paragraph pTitle = new Paragraph("LETTRE DE GARANTIE", titleFont);
+            Paragraph pTitle = new Paragraph("LETTRE DE GARANTIE", new Font(Font.FontFamily.HELVETICA, 16, Font.NORMAL, bleuTitre));
             pTitle.setAlignment(Element.ALIGN_CENTER);
             boxCell.addElement(pTitle);
             titleTable.addCell(boxCell);
-
             document.add(titleTable);
-            document.add(new Paragraph(" \n"));
 
-            // 3. Corps du document (Souche & Champs structurés)
-            Paragraph pSouche = new Paragraph("Souche", new Font(Font.FontFamily.TIMES_ROMAN, 16, Font.NORMAL, textDark));
-            pSouche.setSpacingBefore(24f);
-            pSouche.setSpacingAfter(26f);
+            Paragraph pNum = new Paragraph();
+            pNum.setSpacingBefore(18f);
+            pNum.add(new Chunk("N° ", new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD, textDark)));
+            pNum.add(new Chunk(lettre.getNumero(), manuscrite(19f)));
+            document.add(pNum);
+
+            // 3. Souche + champs du formulaire (valeurs « manuscrites » bleues, comme le site)
+            Font labelFont = new Font(Font.FontFamily.TIMES_ROMAN, 12.5f, Font.NORMAL, textDark);
+
+            Paragraph pSouche = new Paragraph("Souche", new Font(Font.FontFamily.TIMES_ROMAN, 15, Font.NORMAL, textDark));
+            pSouche.setSpacingBefore(16f);
+            pSouche.setSpacingAfter(14f);
             document.add(pSouche);
 
-            // Structure
-            Paragraph pStructure = new Paragraph();
-            pStructure.add(new Chunk("STRUCTURE : ", fieldBoldFont));
-            pStructure.add(new Chunk("CSU / BCSU Régional de Thiès ..............................................................", fieldFont));
-            pStructure.setSpacingAfter(22f);
-            document.add(pStructure);
-
-            // Prénom et nom
-            Paragraph pName = new Paragraph();
-            pName.add(new Chunk("Prénom et nom de l'assuré : ", fieldBoldFont));
-            pName.add(new Chunk(lettre.getPatientPrenom() + " " + lettre.getPatientNom() + " .........................................................................................", fieldFont));
-            pName.setSpacingAfter(10f);
-            document.add(pName);
-
-            // Type d'assuré
-            Paragraph pType = new Paragraph();
-            pType.add(new Chunk("Type d'assuré : ", fieldBoldFont));
-            pType.add(new Chunk(regimeLabel(lettre.getRegime()) + " ............................................................................................................", fieldFont));
-            pType.setSpacingAfter(10f);
-            document.add(pType);
-
-            // Code assuré/immatriculation
-            Paragraph pCode = new Paragraph();
-            pCode.add(new Chunk("Code assuré/immatriculation : ", fieldBoldFont));
-            pCode.add(new Chunk((lettre.getPatientId() != null ? lettre.getPatientId() : "—") + " .......................................................................................................", fieldFont));
-            pCode.setSpacingAfter(10f);
-            document.add(pCode);
-
-            // Date de naissance
-            Paragraph pBirth = new Paragraph();
-            pBirth.add(new Chunk("Date de naissance : ", fieldBoldFont));
-            pBirth.add(new Chunk((lettre.getPatientDateNaissance() != null ? lettre.getPatientDateNaissance().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "") + "........................................................................................................................", fieldFont));
-            pBirth.setSpacingAfter(10f);
-            document.add(pBirth);
-
-            // Sexe
-            Paragraph pSexe = new Paragraph();
-            pSexe.add(new Chunk("Sexe : ", fieldBoldFont));
-            pSexe.add(new Chunk("................................................................................─────────────────────────", fieldFont));
-            pSexe = new Paragraph();
-            pSexe.add(new Chunk("Sexe : ", fieldBoldFont));
-            pSexe.add(new Chunk("........................................................................................................................", fieldFont));
-            pSexe.setSpacingAfter(16f);
-            document.add(pSexe);
-
-            // Motif
-            String designationPrestations = lettre.getPrestations() != null && !lettre.getPrestations().isEmpty()
-                    ? lettre.getPrestations().get(0).getDesignation() : "Traitement Médical";
-            Paragraph pMotif = new Paragraph();
-            pMotif.add(new Chunk("Motif : ", fieldBoldFont));
-            pMotif.add(new Chunk(designationPrestations + " ............................................................................................................................", fieldFont));
-            pMotif.setSpacingAfter(56f);
-            document.add(pMotif);
-
-            // Taux de prise en charge
-            String tauxPriseEnchargeText = (lettre.getRegime() == Regime.CONTRIBUTIF) ? "80% (SEN-CSU) / 20% (Bénéficiaire)" : "100% (SEN-CSU)";
-            Paragraph pTaux = new Paragraph();
-            pTaux.add(new Chunk("Taux de prise en charge : ", fieldBoldFont));
-            pTaux.add(new Chunk(tauxPriseEnchargeText + " ....................................................................................................................", fieldFont));
-            pTaux.setSpacingAfter(32f);
-            document.add(pTaux);
-
-            // Date de délivrance
+            String structure = lettre.getStructureNom() != null ? lettre.getStructureNom() : "";
+            String codeAssure = (lettre.getPatientNumeroAssure() != null && !lettre.getPatientNumeroAssure().isBlank())
+                    ? lettre.getPatientNumeroAssure()
+                    : (lettre.getCniNumeroOcr() != null ? lettre.getCniNumeroOcr() : "");
+            String sexeLbl = "M".equalsIgnoreCase(lettre.getPatientSexe()) ? "Masculin"
+                    : ("F".equalsIgnoreCase(lettre.getPatientSexe()) ? "Féminin"
+                    : (lettre.getPatientSexe() != null ? lettre.getPatientSexe() : ""));
+            String naissance = lettre.getPatientDateNaissance() != null
+                    ? lettre.getPatientDateNaissance().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "";
+            String motifs = "";
+            if (lettre.getPrestations() != null && !lettre.getPrestations().isEmpty()) {
+                motifs = lettre.getPrestations().stream()
+                        .map(pr -> (pr.getMotifCesarienne() != null && !pr.getMotifCesarienne().isBlank())
+                                ? pr.getDesignation() + " (" + pr.getMotifCesarienne() + ")" : pr.getDesignation())
+                        .collect(java.util.stream.Collectors.joining(", "));
+            }
+            String taux = (lettre.getRegime() == Regime.CONTRIBUTIF) ? "80%" : "100%";
             String dateCreation = lettre.getCreatedAt() != null
                     ? lettre.getCreatedAt().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
                     : LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-            Paragraph pDate = new Paragraph();
-            pDate.add(new Chunk("Date : ", fieldBoldFont));
-            pDate.add(new Chunk(dateCreation, fieldFont));
-            pDate.setSpacingAfter(42f);
+
+            document.add(champManuscrit("STRUCTURE :", structure, labelFont, 18f));
+            document.add(champManuscrit("Prénom et nom de l'assuré :", lettre.getPatientPrenom() + " " + lettre.getPatientNom(), labelFont, 18f));
+            document.add(champManuscrit("Type d'assuré :", regimeLabel(lettre.getRegime()), labelFont, 18f));
+            document.add(champManuscrit("Code assuré/immatriculation :", codeAssure, labelFont, 18f));
+            document.add(champManuscrit("Date de naissance :", naissance, labelFont, 18f));
+            document.add(champManuscrit("Sexe :", sexeLbl, labelFont, 18f));
+            document.add(champManuscrit("Motif :", motifs, labelFont, 18f));
+
+            Paragraph pTaux = champManuscrit("Taux de prise en charge :", taux, labelFont, 18f);
+            pTaux.setSpacingBefore(20f);
+            document.add(pTaux);
+
+            Paragraph pDate = champManuscrit("Date :", dateCreation, labelFont, 18f);
+            pDate.setSpacingBefore(20f);
+            pDate.setSpacingAfter(20f);
             document.add(pDate);
 
-            // 4. Signatures & Cachet
+            // 4. Signatures & Cachet (images du paramétrage BCSU si renseignées)
             Paragraph pSignatureTitle = new Paragraph("Signature et cachet", new Font(Font.FontFamily.TIMES_ROMAN, 13, Font.BOLD, textDark));
-            pSignatureTitle.setSpacingAfter(70f);
-            document.add(pSignatureTitle);
+            Image imgSignature = imageFromDataUrl(signatureImage, 150f, 60f);
+            Image imgCachet = imageFromDataUrl(cachetImage, 150f, 60f);
+            if (imgSignature != null || imgCachet != null) {
+                pSignatureTitle.setSpacingAfter(8f);
+                document.add(pSignatureTitle);
+                PdfPTable signTable = new PdfPTable(2);
+                signTable.setWidthPercentage(60);
+                signTable.setHorizontalAlignment(Element.ALIGN_LEFT);
+                signTable.getDefaultCell().setBorder(PdfPCell.NO_BORDER);
+                PdfPCell sigCell = new PdfPCell();
+                sigCell.setBorder(PdfPCell.NO_BORDER);
+                if (imgSignature != null) sigCell.addElement(imgSignature);
+                signTable.addCell(sigCell);
+                PdfPCell cachetCell = new PdfPCell();
+                cachetCell.setBorder(PdfPCell.NO_BORDER);
+                if (imgCachet != null) cachetCell.addElement(imgCachet);
+                signTable.addCell(cachetCell);
+                signTable.setSpacingAfter(10f);
+                document.add(signTable);
+            } else {
+                pSignatureTitle.setSpacingAfter(70f);
+                document.add(pSignatureTitle);
+            }
 
             // 5. Validité en bas
             Paragraph pVal = new Paragraph("Valable pour une période d'un mois à partir de la date de délivrance", noteFont);
@@ -1042,10 +1180,10 @@ public class ExportService {
             Font thFont = new Font(Font.FontFamily.HELVETICA, 9, Font.BOLD, textDark);
             Font tdFont = new Font(Font.FontFamily.HELVETICA, 9, Font.NORMAL, textDark);
 
-            // 1. En-tête (Logo + Label national)
-            PdfPTable headerTable = new PdfPTable(2);
+            // 1. En-tête (Logo + Titre + QR code du numéro)
+            PdfPTable headerTable = new PdfPTable(3);
             headerTable.setWidthPercentage(100);
-            headerTable.setWidths(new float[]{5.5f, 4.5f});
+            headerTable.setWidths(new float[]{4.6f, 3.6f, 1.8f});
             headerTable.getDefaultCell().setBorder(PdfPCell.NO_BORDER);
 
             PdfPCell leftCell = new PdfPCell();
@@ -1074,72 +1212,51 @@ public class ExportService {
             titleCell.addElement(pTitle);
             headerTable.addCell(titleCell);
 
+            PdfPCell qrCell = new PdfPCell();
+            qrCell.setBorder(PdfPCell.NO_BORDER);
+            qrCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+            qrCell.setVerticalAlignment(Element.ALIGN_TOP);
+            Image qrBon = qrCodeNumero(bon.getNumero(), 66f);
+            if (qrBon != null) {
+                qrCell.addElement(qrBon);
+                Paragraph pQrLabel = new Paragraph("Scanner pour retrouver le bon",
+                        new Font(Font.FontFamily.HELVETICA, 6.5f, Font.ITALIC, textDark));
+                pQrLabel.setAlignment(Element.ALIGN_CENTER);
+                qrCell.addElement(pQrLabel);
+            }
+            headerTable.addCell(qrCell);
+
             document.add(headerTable);
             document.add(new Paragraph(" \n"));
 
-            // 2. Cases à cocher (Circuit Public / Circuit Officine)
-            PdfPTable circuitsTable = new PdfPTable(2);
-            circuitsTable.setWidthPercentage(100);
-            circuitsTable.setWidths(new float[]{1f, 1f});
-            circuitsTable.getDefaultCell().setBorder(PdfPCell.NO_BORDER);
-
-            PdfPCell cellPublic = new PdfPCell();
-            cellPublic.setBorder(PdfPCell.NO_BORDER);
-            Paragraph pPub = new Paragraph();
-            pPub.add(new Chunk("MEDICAMENT DU CIRCUIT PUBLIQUE (PEC 80%)   [   ] ", metaLabelFont));
-            cellPublic.addElement(pPub);
-            circuitsTable.addCell(cellPublic);
-
-            PdfPCell cellOfficine = new PdfPCell();
-            cellOfficine.setBorder(PdfPCell.NO_BORDER);
-            Paragraph pOff = new Paragraph();
-            pOff.add(new Chunk("MEDICAMENT DU CIRCUIT D'OFFICINE (PEC 50%)   [ X ]", metaLabelFont));
-            cellOfficine.addElement(pOff);
-            circuitsTable.addCell(cellOfficine);
-
-            document.add(circuitsTable);
-            document.add(new Paragraph(" \n"));
-
-            // N° Bon
-            Paragraph pNum = new Paragraph();
-            pNum.add(new Chunk("N° ...... ", new Font(Font.FontFamily.HELVETICA, 12, Font.BOLD, textDark)));
-            pNum.add(new Chunk(bon.getNumero(), new Font(Font.FontFamily.HELVETICA, 11, Font.ITALIC, textDark)));
-            pNum.setSpacingAfter(10f);
-            document.add(pNum);
-
-            // 3. Métadonnées alignées (saisie pharmacie, identité)
+            // 2. N° + sous-titre + métadonnées (valeurs manuscrites bleues, comme le site)
             String dateCreation = bon.getCreatedAt() != null
                     ? bon.getCreatedAt().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
                     : LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
 
-            PdfPTable metaGrid = new PdfPTable(2);
-            metaGrid.setWidthPercentage(100);
-            metaGrid.setWidths(new float[]{1f, 1f});
-            metaGrid.getDefaultCell().setBorder(PdfPCell.NO_BORDER);
+            Paragraph pNum = new Paragraph();
+            pNum.add(new Chunk("N° ", new Font(Font.FontFamily.HELVETICA, 12, Font.BOLD, textDark)));
+            pNum.add(new Chunk(bon.getNumero(), manuscrite(17f)));
+            pNum.setSpacingAfter(2f);
+            document.add(pNum);
 
-            PdfPCell cellLeft = new PdfPCell();
-            cellLeft.setBorder(PdfPCell.NO_BORDER);
-            addMetaLine(cellLeft, "Date émission : ", dateCreation, metaLabelFont, metaValFont);
-            addMetaLine(cellLeft, "Nom du bénéficiaire : ", bon.getPatientPrenom() + " " + bon.getPatientNom(), metaLabelFont, metaValFont);
-            addMetaLine(cellLeft, "CODE ASSURE/ NUM D'immatriculation : ", (bon.getLettreGarantieNumero() != null ? bon.getLettreGarantieNumero() : "—"), metaLabelFont, metaValFont);
-            addMetaLine(cellLeft, "Age : ", ".................................", metaLabelFont, metaValFont);
-            metaGrid.addCell(cellLeft);
+            Paragraph pSub = new Paragraph("Médicament du circuit d'officine (prise en charge 50%)",
+                    new Font(Font.FontFamily.HELVETICA, 9, Font.ITALIC, new BaseColor(107, 114, 128)));
+            pSub.setSpacingAfter(12f);
+            document.add(pSub);
 
-            PdfPCell cellRight = new PdfPCell();
-            cellRight.setBorder(PdfPCell.NO_BORDER);
-            addMetaLine(cellRight, "Pharmacie : ", ".......................................................", metaLabelFont, metaValFont);
-            addMetaLine(cellRight, "Sexe : ", ".................................", metaLabelFont, metaValFont);
-            addMetaLine(cellRight, "Structure de santé : ", "BCSU Thiès", metaLabelFont, metaValFont);
-            addMetaLine(cellRight, "Prénom et Nom du prescripteur : ", ".......................................................", metaLabelFont, metaValFont);
-            metaGrid.addCell(cellRight);
-
-            document.add(metaGrid);
-            document.add(new Paragraph(" \n"));
+            Font bonLabelFont = new Font(Font.FontFamily.HELVETICA, 11, Font.NORMAL, textDark);
+            document.add(champManuscrit("Date d'émission :", dateCreation, bonLabelFont, 15f));
+            document.add(champManuscrit("Nom du bénéficiaire :", (bon.getPatientPrenom() + " " + bon.getPatientNom()).trim(), bonLabelFont, 15f));
+            document.add(champManuscrit("Régime :", regimeLabel(bon.getRegime()), bonLabelFont, 15f));
+            Paragraph pLg = champManuscrit("Lettre de garantie :", bon.getLettreGarantieNumero(), bonLabelFont, 15f);
+            pLg.setSpacingAfter(14f);
+            document.add(pLg);
 
             // 4. Tableau (Désignation, Quantité, Prix Unitaire, Total, Taux de prise en charge)
             // Avec des lignes vides pour que le pharmacien puisse écrire dedans directement.
-            String[] headers = {"Désignation", "Quantité", "Prix Unitaire", "Total", "Taux de prise en charge"};
-            float[] widths = {40f, 12f, 15f, 13f, 20f};
+            String[] headers = {"Désignation", "Qté", "P. Unit.", "Total", "PEC"};
+            float[] widths = {42f, 12f, 16f, 16f, 14f};
 
             PdfPTable table = new PdfPTable(headers.length);
             table.setWidthPercentage(100);
@@ -1174,7 +1291,7 @@ public class ExportService {
                     addTableCell(table, String.valueOf(lf.getQuantite()), Element.ALIGN_CENTER, tdFont, textDark);
                     addTableCell(table, String.valueOf((int)lf.getPrixUnitaire()) + " F", Element.ALIGN_CENTER, tdFont, textDark);
                     addTableCell(table, String.valueOf((int)lf.getMontant()) + " F", Element.ALIGN_CENTER, tdFont, textDark);
-                    addTableCell(table, "80%", Element.ALIGN_CENTER, tdFont, textDark);
+                    addTableCell(table, "50%", Element.ALIGN_CENTER, tdFont, textDark);
                     totalMontant += lf.getMontant();
                 }
             } else {
@@ -1187,7 +1304,7 @@ public class ExportService {
                     addTableCell(table, "", Element.ALIGN_CENTER, tdFont, textDark);
                     addTableCell(table, "", Element.ALIGN_CENTER, tdFont, textDark);
                     addTableCell(table, "", Element.ALIGN_CENTER, tdFont, textDark);
-                    addTableCell(table, "80%", Element.ALIGN_CENTER, tdFont, textDark);
+                    addTableCell(table, "50%", Element.ALIGN_CENTER, tdFont, textDark);
                 }
             }
 
@@ -1295,6 +1412,20 @@ public class ExportService {
             titleBoxCell.setHorizontalAlignment(Element.ALIGN_CENTER);
             titleBox.addCell(titleBoxCell);
             titleCell.addElement(titleBox);
+            // QR code du numéro de lettre de garantie : la structure le scanne pour
+            // retrouver le dossier et préremplir la facture (même circuit que la LG).
+            String lgNumero = feuille.getLettreGarantieNumero();
+            if (lgNumero != null && !lgNumero.isBlank()) {
+                Image qrFeuille = qrCodeNumero(lgNumero, 60f);
+                if (qrFeuille != null) {
+                    qrFeuille.setSpacingBefore(8f);
+                    titleCell.addElement(qrFeuille);
+                    Paragraph pQrLabel = new Paragraph("Scanner pour retrouver le dossier",
+                            new Font(Font.FontFamily.HELVETICA, 7f, Font.ITALIC, textDark));
+                    pQrLabel.setAlignment(Element.ALIGN_CENTER);
+                    titleCell.addElement(pQrLabel);
+                }
+            }
             headerTable.addCell(titleCell);
             document.add(headerTable);
             document.add(new Paragraph(" "));

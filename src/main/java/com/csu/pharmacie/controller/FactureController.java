@@ -1,5 +1,6 @@
 package com.csu.pharmacie.controller;
 
+import com.csu.pharmacie.dto.ControleDelivranceDto;
 import com.csu.pharmacie.dto.FactureRequest;
 import com.csu.pharmacie.dto.LigneDecisionRequest;
 import com.csu.pharmacie.dto.LigneFactureDto;
@@ -33,6 +34,15 @@ public class FactureController {
         return ResponseEntity.ok(factureService.getAllFacturesLight(mois, annee));
     }
 
+    /**
+     * Identifiants + statuts des factures visibles : alimente les badges de notification
+     * sans transférer (ni désérialiser) les lignes de facture.
+     */
+    @GetMapping("/statuts")
+    public ResponseEntity<List<com.csu.pharmacie.dto.FactureStatutDto>> getStatuts() {
+        return ResponseEntity.ok(factureService.getStatutsPourBadges());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Facture> getFactureById(@PathVariable String id) {
         return ResponseEntity.ok(factureService.getFactureById(id));
@@ -50,6 +60,20 @@ public class FactureController {
     @GetMapping("/retards")
     public ResponseEntity<List<Facture>> getRetards() {
         return ResponseEntity.ok(factureService.getRetards());
+    }
+
+    /**
+     * Contrôle « médicament déjà délivré durant le mois » sur toute la base nationale.
+     * Appelé avant l'ajout d'une ligne, que le bon soit numérique ou physique.
+     */
+    @GetMapping("/controle-delivrance")
+    public ResponseEntity<ControleDelivranceDto> controlerDelivrance(
+            @RequestParam(required = false) String matricule,
+            @RequestParam(required = false) String nom,
+            @RequestParam String medicament,
+            @RequestParam(required = false) Integer mois,
+            @RequestParam(required = false) Integer annee) {
+        return ResponseEntity.ok(factureService.controlerDelivrance(matricule, nom, medicament, mois, annee));
     }
 
     @PostMapping

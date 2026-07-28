@@ -22,6 +22,12 @@ public class LigneFacture {
     private StatutLigne statutLigne = StatutLigne.EN_ATTENTE;
     private String motifRejet;
 
+    // Vrai lorsque le pharmacien a ajouté lui-même ce médicament (non répertorié dans les
+    // éligibles ni les exclusions). Alimente la colonne « Observation » des factures Excel :
+    // la SEN-CSU peut alors valider son intégration ou l'exclure définitivement.
+    @Builder.Default
+    private boolean ajouteParPharmacien = false;
+
     // Numéro du bon de commande numérique (BCSU) intégré au dossier patient, le cas échéant.
     private String bonCommandeNumero;
 

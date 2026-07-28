@@ -28,15 +28,28 @@ public class JwtUtil {
     @Value("${app.jwt.expiration}")
     private long jwtExpiration;
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(JwtUtil.class);
+
     /**
-     * Échec immédiat du démarrage si le secret JWT est absent ou trop court,
-     * pour empêcher tout déploiement avec un secret faible/prévisible.
+     * Secret absent → génération d'un secret éphémère aléatoire (dev local) : aucun
+     * secret prévisible ne doit exister dans le dépôt. Les tokens émis deviennent
+     * invalides à chaque redémarrage, d'où l'avertissement. Secret fourni mais trop
+     * court → échec immédiat du démarrage (déploiement mal configuré).
      */
     @PostConstruct
     void validateSecret() {
-        if (secret == null || secret.trim().length() < MIN_SECRET_LENGTH) {
+        if (secret == null || secret.isBlank()) {
+            byte[] random = new byte[48];
+            new java.security.SecureRandom().nextBytes(random);
+            secret = java.util.Base64.getEncoder().encodeToString(random);
+            log.warn("APP_JWT_SECRET non défini : secret JWT ÉPHÉMÈRE généré pour cette exécution. "
+                    + "Les sessions seront invalidées au prochain redémarrage. "
+                    + "En production, définissez APP_JWT_SECRET (>= {} caractères aléatoires).", MIN_SECRET_LENGTH);
+            return;
+        }
+        if (secret.trim().length() < MIN_SECRET_LENGTH) {
             throw new IllegalStateException(
-                    "APP_JWT_SECRET manquant ou trop court (>= " + MIN_SECRET_LENGTH
+                    "APP_JWT_SECRET trop court (>= " + MIN_SECRET_LENGTH
                             + " caractères requis). Définissez une variable d'environnement APP_JWT_SECRET robuste.");
         }
     }

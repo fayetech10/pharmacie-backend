@@ -3,6 +3,7 @@ package com.csu.pharmacie.controller;
 import com.csu.pharmacie.dto.UserRequest;
 import com.csu.pharmacie.entity.User;
 import com.csu.pharmacie.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,18 +32,31 @@ public class UserController {
         return ResponseEntity.ok(userService.getBcsuForCurrentUser());
     }
 
+    /** Cachet et signature d'un agent (affichés sur ses lettres de garantie). */
+    @GetMapping("/{id}/parametrage")
+    public ResponseEntity<java.util.Map<String, String>> getParametrage(@PathVariable String id) {
+        return ResponseEntity.ok(userService.getParametrage(id));
+    }
+
+    /** Met à jour le cachet et la signature de l'utilisateur courant (paramétrage BCSU). */
+    @PutMapping("/parametrage")
+    public ResponseEntity<java.util.Map<String, String>> updateParametrage(
+            @RequestBody java.util.Map<String, String> request) {
+        return ResponseEntity.ok(userService.updateParametrage(request));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<User> getUserById(@PathVariable String id) {
         return ResponseEntity.ok(userService.getUserById(id));
     }
 
     @PostMapping
-    public ResponseEntity<User> createUser(@RequestBody UserRequest request) {
+    public ResponseEntity<User> createUser(@Valid @RequestBody UserRequest request) {
         return ResponseEntity.ok(userService.createUser(request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<User> updateUser(@PathVariable String id, @RequestBody UserRequest request) {
+    public ResponseEntity<User> updateUser(@PathVariable String id, @Valid @RequestBody UserRequest request) {
         return ResponseEntity.ok(userService.updateUser(id, request));
     }
 

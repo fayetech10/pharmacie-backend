@@ -1,6 +1,8 @@
 package com.csu.pharmacie.service;
 
+import com.csu.pharmacie.dto.ControleDelivranceDto;
 import com.csu.pharmacie.dto.FactureRequest;
+import com.csu.pharmacie.dto.FactureStatutDto;
 import com.csu.pharmacie.dto.LigneDecisionRequest;
 import com.csu.pharmacie.dto.LigneFactureDto;
 import com.csu.pharmacie.dto.ValidationRequest;
@@ -50,34 +52,47 @@ public class FactureService {
 
     public List<Facture> getAllFactures(Integer mois, Integer annee) {
         User user = getCurrentUser();
-        
-        List<Facture> allFactures;
+
+        // Filtres appliqués en base (0 = pas de filtre) : on ne charge plus jamais
+        // l'historique complet pour n'en garder qu'un mois.
+        int m = (mois != null && mois > 0) ? mois : 0;
+        int a = (annee != null && annee > 0) ? annee : 0;
+
         switch (user.getRole()) {
             case PHARMACIEN:
-                allFactures = factureRepository.findByPharmacieId(user.getPharmacieId());
-                break;
+                return factureRepository.findByPharmacieIdFiltre(user.getPharmacieId(), m, a);
             case SERVICE_REGIONAL:
-                allFactures = factureRepository.findByRegionId(user.getRegionId());
-                break;
+                return factureRepository.findByRegionIdFiltre(user.getRegionId(), m, a);
             case SERVICE_CENTRAL:
             case ADMIN:
-                allFactures = factureRepository.findAll();
-                break;
+                return factureRepository.findAllFiltre(m, a);
             default:
-                allFactures = new ArrayList<>();
+                return new ArrayList<>();
         }
-        
-        if (mois != null && mois > 0) {
-            allFactures = allFactures.stream().filter(f -> f.getMois() == mois).collect(Collectors.toList());
-        }
-        if (annee != null && annee > 0) {
-            allFactures = allFactures.stream().filter(f -> f.getAnnee() == annee).collect(Collectors.toList());
-        }
-        return allFactures;
     }
     
     public List<Facture> getAllFactures() {
         return getAllFactures(null, null);
+    }
+
+    /**
+     * Identifiants + statuts des factures visibles par l'utilisateur, pour les badges
+     * de notification. Même périmètre que {@link #getAllFactures()}, mais en projection :
+     * aucune colonne JSONB (lignes, historique) n'est désérialisée.
+     */
+    public List<FactureStatutDto> getStatutsPourBadges() {
+        User user = getCurrentUser();
+        switch (user.getRole()) {
+            case PHARMACIEN:
+                return factureRepository.findStatutsByPharmacie(user.getPharmacieId());
+            case SERVICE_REGIONAL:
+                return factureRepository.findStatutsByRegion(user.getRegionId());
+            case SERVICE_CENTRAL:
+            case ADMIN:
+                return factureRepository.findAllStatuts();
+            default:
+                return new ArrayList<>();
+        }
     }
 
     /**
@@ -213,6 +228,76 @@ public class FactureService {
                 .orElse(null);
     }
 
+    /**
+     * Contrôle « médicament déjà délivré durant le mois ».
+     *
+     * Le périmètre est volontairement NATIONAL (aucun filtre pharmacie ni région) : le but
+     * est justement de détecter qu'un bénéficiaire se fait délivrer le même traitement dans
+     * une autre pharmacie, éventuellement d'une autre région. Ne pas réutiliser
+     * {@link #getAllFactures()} ici, qui restreint les résultats selon le rôle appelant.
+     *
+     * Le bénéficiaire est identifié par son matricule (numéro d'immatriculation) et, à défaut,
+     * par son nom — cas d'un bon de commande physique où seul le nom est disponible.
+     */
+    public ControleDelivranceDto controlerDelivrance(String matricule, String nomPatient,
+                                                     String medicament, Integer mois, Integer annee) {
+        String matriculeNorm = normaliser(matricule);
+        String nomNorm = normaliser(nomPatient);
+        String medicamentNorm = normaliser(medicament);
+
+        if ((matriculeNorm.isEmpty() && nomNorm.isEmpty()) || medicamentNorm.isEmpty()) {
+            return ControleDelivranceDto.builder()
+                    .quantiteDejaDelivree(0)
+                    .delivrances(new ArrayList<>())
+                    .build();
+        }
+
+        LocalDate now = LocalDate.now();
+        int moisCible = mois != null ? mois : now.getMonthValue();
+        int anneeCible = annee != null ? annee : now.getYear();
+
+        // Le JSONB `lignes` est scanné par LIKE : on ne charge que les factures candidates.
+        Map<String, Facture> candidates = new HashMap<>();
+        for (String terme : List.of(matricule, nomPatient)) {
+            if (terme == null || terme.isBlank()) continue;
+            for (Facture f : factureRepository.findByLignesContaining(terme.trim())) {
+                candidates.putIfAbsent(f.getId(), f);
+            }
+        }
+
+        List<ControleDelivranceDto.Delivrance> delivrances = new ArrayList<>();
+        int total = 0;
+
+        for (Facture f : candidates.values()) {
+            if (f.getMois() != moisCible || f.getAnnee() != anneeCible) continue;
+            if (f.getLignes() == null) continue;
+
+            for (LigneFacture l : f.getLignes()) {
+                boolean memePatient = (!matriculeNorm.isEmpty() && matriculeNorm.equals(normaliser(l.getPatientMatricule())))
+                        || (!nomNorm.isEmpty() && nomNorm.equals(normaliser(l.getPatientNomPrenom())));
+                if (!memePatient) continue;
+                if (!medicamentNorm.equals(normaliser(l.getMedicament()))) continue;
+
+                total += l.getQuantite();
+                delivrances.add(ControleDelivranceDto.Delivrance.builder()
+                        .pharmacieNom(f.getPharmacieNom())
+                        .medicament(l.getMedicament())
+                        .quantite(l.getQuantite())
+                        .build());
+            }
+        }
+
+        return ControleDelivranceDto.builder()
+                .quantiteDejaDelivree(total)
+                .delivrances(delivrances)
+                .build();
+    }
+
+    /** Comparaison insensible à la casse et aux espaces de bord. */
+    private String normaliser(String valeur) {
+        return valeur == null ? "" : valeur.trim().toLowerCase();
+    }
+
     public List<Facture> getRetards() {
         User user = getCurrentUser();
         if (user.getRole() != Role.PHARMACIEN) {
@@ -263,13 +348,9 @@ public class FactureService {
 
         List<LigneFacture> nouvellesLignes = new ArrayList<>();
         for (LigneFactureDto ligneDto : lignesDto) {
-            // Vérifier si le médicament est exclu
-            medicamentRepository.findByCodeIgnoreCase(ligneDto.getCodeProduit())
-                    .ifPresent(med -> {
-                        if (med.getStatut() == StatutMedicament.EXCLU) {
-                            throw new BusinessException("Ce médicament est exclu et non facturable");
-                        }
-                    });
+            // Refuse les médicaments exclus et repère ceux ajoutés par le pharmacien
+            // (non répertoriés) : ces derniers sont enregistrés pour validation SEN-CSU.
+            boolean ajoute = resoudreMedicamentAjoute(ligneDto.getMedicament(), ligneDto.getCodeProduit());
 
             LigneFacture newLigne = new LigneFacture();
             newLigne.setPatientNomPrenom(ligneDto.getPatientNomPrenom());
@@ -283,6 +364,7 @@ public class FactureService {
             newLigne.setTicketCaisse(ligneDto.getTicketCaisse());
             newLigne.setBonCommande(ligneDto.getBonCommande());
             newLigne.setOrdonnance(ligneDto.getOrdonnance());
+            newLigne.setAjouteParPharmacien(ajoute);
 
             nouvellesLignes.add(newLigne);
             facture.getLignes().add(newLigne);
@@ -554,11 +636,7 @@ public class FactureService {
 
     private List<LigneFacture> mapLignes(List<LigneFactureDto> dtos) {
         return dtos.stream().map(dto -> {
-            medicamentRepository.findByNomIgnoreCase(dto.getMedicament()).ifPresent(med -> {
-                if (med.getStatut() == StatutMedicament.EXCLU) {
-                    throw new BusinessException("Le médicament " + dto.getMedicament() + " est exclu et ne peut pas être facturé.");
-                }
-            });
+            boolean ajoute = resoudreMedicamentAjoute(dto.getMedicament(), dto.getCodeProduit());
 
             double montant = dto.getQuantite() * dto.getPrixUnitaire();
             return LigneFacture.builder()
@@ -573,8 +651,62 @@ public class FactureService {
                     .ticketCaisse(dto.getTicketCaisse())
                     .bonCommande(dto.getBonCommande())
                     .ordonnance(dto.getOrdonnance())
+                    .ajouteParPharmacien(ajoute)
                     .build();
         }).collect(Collectors.toList());
+    }
+
+    /**
+     * Résout le statut d'un médicament saisi sur une facture :
+     * <ul>
+     *   <li>EXCLU : lève une exception métier (non facturable) ;</li>
+     *   <li>ÉLIGIBLE : ligne normale ;</li>
+     *   <li>NON RÉPERTORIÉ ou inconnu : ligne « ajoutée par le pharmacien ».</li>
+     * </ul>
+     * Un médicament totalement inconnu est enregistré en statut {@code NON_REPERTORIE}
+     * afin que la SEN-CSU (administration) puisse le valider ou l'exclure ensuite.
+     * Idempotent : un médicament déjà présent (par nom) n'est jamais dupliqué.
+     *
+     * @return {@code true} si la ligne doit être marquée « ajoutée par le pharmacien ».
+     */
+    private boolean resoudreMedicamentAjoute(String nom, String code) {
+        if (nom == null || nom.isBlank()) {
+            return false;
+        }
+        // Le nom n'est pas unique en base (imports successifs) : on lit la liste complète
+        // plutôt qu'un Optional, qui échouerait sur un doublon. L'exclusion prime, puis
+        // l'éligibilité ; à défaut la ligne est marquée « ajoutée par le pharmacien ».
+        List<Medicament> existants = medicamentRepository.findAllByNomIgnoreCase(nom.trim());
+        if (!existants.isEmpty()) {
+            if (existants.stream().anyMatch(m -> m.getStatut() == StatutMedicament.EXCLU)) {
+                throw new BusinessException("Le médicament " + nom + " est exclu et ne peut pas être facturé.");
+            }
+            if (existants.stream().anyMatch(m -> m.getStatut() == StatutMedicament.ELIGIBLE)) {
+                return false;
+            }
+            return existants.stream().anyMatch(m -> m.getStatut() == StatutMedicament.NON_REPERTORIE);
+        }
+
+        // Médicament inconnu : on l'enregistre en NON_REPERTORIE pour revue par la SEN-CSU.
+        LocalDateTime now = LocalDateTime.now();
+        String codeMed = (code != null && !code.isBlank())
+                ? code.trim()
+                : "NR-" + System.currentTimeMillis();
+        // Un code déjà pris par un autre médicament : on en génère un dédié pour éviter le conflit.
+        if (medicamentRepository.existsByCodeIgnoreCase(codeMed)) {
+            codeMed = "NR-" + System.currentTimeMillis() + "-" + Math.abs(nom.trim().hashCode() % 100000);
+        }
+        Medicament nouveau = Medicament.builder()
+                .code(codeMed)
+                .nom(nom.trim())
+                .statut(StatutMedicament.NON_REPERTORIE)
+                .description("Ajouté par un pharmacien — à valider par la SEN-CSU")
+                .actif(true)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        medicamentRepository.save(nouveau);
+        return true;
     }
 
     @Transactional
@@ -689,19 +821,15 @@ public class FactureService {
                 int quantite = (int) Math.round(parseNombre(com.csu.pharmacie.utils.ExcelUtils.getCellStringValue(row.getCell(6))));
                 if (quantite <= 0) quantite = 1;
 
-                // Refus des médicaments exclus, comme à la saisie pharmacie.
-                medicamentRepository.findByNomIgnoreCase(medNom).ifPresent(med -> {
-                    if (med.getStatut() == StatutMedicament.EXCLU) {
-                        throw new BusinessException("Le médicament " + medNom + " est exclu et ne peut pas être facturé.");
-                    }
-                });
-
                 LigneFacture ancienne = anciennesParCle.get(cleLigne(currentMatricule, medNom));
                 String codeProduit = ancienne != null ? ancienne.getCodeProduit() : null;
                 if (codeProduit == null) {
                     codeProduit = medicamentRepository.findByNomIgnoreCase(medNom)
                             .map(Medicament::getCode).orElse(null);
                 }
+
+                // Refuse les exclus et repère les médicaments non répertoriés (ajoutés par le pharmacien).
+                boolean ajoute = resoudreMedicamentAjoute(medNom, codeProduit);
 
                 LigneFacture.LigneFactureBuilder b = LigneFacture.builder()
                         .patientNomPrenom(currentNom)
@@ -710,7 +838,8 @@ public class FactureService {
                         .codeProduit(codeProduit)
                         .quantite(quantite)
                         .prixUnitaire(prixUnitaire)
-                        .montant(quantite * prixUnitaire);
+                        .montant(quantite * prixUnitaire)
+                        .ajouteParPharmacien(ajoute);
 
                 // Conserve les pièces justificatives de la ligne d'origine si retrouvée.
                 if (ancienne != null) {

@@ -27,7 +27,12 @@ import com.csu.pharmacie.repository.PointageRepository;
 import com.csu.pharmacie.repository.StructureSanitaireRepository;
 import com.csu.pharmacie.repository.BonCommandeRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -36,6 +41,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -51,43 +57,86 @@ public class StatsService {
     private final StructureSanitaireRepository structureSanitaireRepository;
     private final BonCommandeRepository bonCommandeRepository;
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    /** Part CSU du montant facturé (règle métier, surchargée via APP_CSU_TAUX). */
+    @Value("${app.csu.taux-prise-en-charge:0.5}")
+    private double tauxPriseEnCharge;
+
+    @Transactional(readOnly = true)
     public StatsDto getStatsNational() {
-        return computeStats(factureRepository.findAll(), null, null);
+        return computeStats(chargerFacturesAllegees(null, null), null, null);
     }
 
+    @Transactional(readOnly = true)
     public StatsDto getStatsRegional(String regionId) {
-        return computeStats(factureRepository.findByRegionId(regionId), regionId, null);
+        return computeStats(chargerFacturesAllegees(regionId, null), regionId, null);
     }
 
+    @Transactional(readOnly = true)
     public StatsDto getStatsPharmacie(String pharmacieId) {
-        return computeStats(factureRepository.findByPharmacieId(pharmacieId), null, pharmacieId);
+        return computeStats(chargerFacturesAllegees(null, pharmacieId), null, pharmacieId);
+    }
+
+    /**
+     * Charge les factures du périmètre demandé en FLUX : chaque facture est allégée
+     * de ses pièces base64 (jamais utilisées par les statistiques) puis détachée de
+     * la session Hibernate avant de passer à la suivante. La mémoire ne contient donc
+     * qu'une seule facture complète à la fois — c'est ce qui a fait tomber les stats
+     * nationales sur Render (512 Mo) quand tout était chargé d'un bloc.
+     */
+    private List<Facture> chargerFacturesAllegees(String regionId, String pharmacieId) {
+        try (Stream<Facture> flux = pharmacieId != null
+                ? factureRepository.findAllByPharmacieId(pharmacieId)
+                : regionId != null
+                        ? factureRepository.findAllByRegionId(regionId)
+                        : factureRepository.findAllStream()) {
+            List<Facture> resultat = new ArrayList<>();
+            flux.forEach(f -> {
+                if (f.getLignes() != null) {
+                    for (LigneFacture l : f.getLignes()) {
+                        l.setTicketCaisse(null);
+                        l.setBonCommande(null);
+                        l.setOrdonnance(null);
+                    }
+                }
+                entityManager.detach(f);
+                resultat.add(f);
+            });
+            return resultat;
+        }
     }
 
     public List<AgentStatDto> getStatsAgents() {
-        List<User> bcsuAgents = userRepository.findAll().stream()
-                .filter(u -> u.getRole() == Role.BCSU)
-                .collect(Collectors.toList());
+        List<User> bcsuAgents = userRepository.findByRole(Role.BCSU);
+        if (bcsuAgents.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<String> uids = bcsuAgents.stream().map(User::getId).collect(Collectors.toList());
 
         // Précharger la structure de rattachement pour chaque agent BCSU
         Map<String, String> bcsuStructureMap = structureSanitaireRepository.findAll().stream()
                 .filter(s -> s.getBcsuId() != null)
                 .collect(Collectors.toMap(StructureSanitaire::getBcsuId, StructureSanitaire::getNom, (a, b) -> a));
 
+        // 5 requêtes groupées au total, au lieu de 4 requêtes PAR agent (N+1).
+        Map<String, Long> patientsParAgent = compterParCle(patientRepository.countParCreateur(uids));
+        Map<String, Long> lettresParAgent = compterParCle(lettreGarantieRepository.countParCreateur(uids));
+        Map<String, Long> feuillesParAgent = compterParCle(feuilleSoinsRepository.countParCreateur(uids));
+
+        LocalDateTime oneWeekAgo = LocalDateTime.now().minusDays(7);
+        Map<String, List<Pointage>> pointagesParAgent = pointageRepository
+                .findByUserIdInAndDateGreaterThanEqual(uids, oneWeekAgo.toLocalDate())
+                .stream()
+                .collect(Collectors.groupingBy(Pointage::getUserId));
+
         List<AgentStatDto> stats = new ArrayList<>();
         for (User u : bcsuAgents) {
             String uid = u.getId();
-            long patients = patientRepository.countByCreatedBy(uid);
-            long lettres = lettreGarantieRepository.countByCreatedBy(uid);
-            long feuilles = feuilleSoinsRepository.countByCreatedBy(uid);
-            
-            // Calculer les heures travaillées de la semaine
-            LocalDateTime oneWeekAgo = LocalDateTime.now().minusDays(7);
-            List<Pointage> pointages = pointageRepository.findByUserIdOrderByDateDesc(uid).stream()
-                    .filter(p -> p.getDate().isAfter(oneWeekAgo.toLocalDate()) || p.getDate().isEqual(oneWeekAgo.toLocalDate()))
-                    .collect(Collectors.toList());
-            
+
             double heuresSemaine = 0;
-            for (Pointage p : pointages) {
+            for (Pointage p : pointagesParAgent.getOrDefault(uid, List.of())) {
                 if (p.getHeureArrivee() != null && p.getHeureDepart() != null) {
                     heuresSemaine += Duration.between(p.getHeureArrivee(), p.getHeureDepart()).toMinutes() / 60.0;
                 }
@@ -103,9 +152,9 @@ public class StatsService {
                     .id(uid)
                     .nom(u.getPrenom() + " " + u.getNom())
                     .structure(structureNom)
-                    .dossiersTraites(patients)
-                    .lettresEmises(lettres)
-                    .feuillesSoins(feuilles)
+                    .dossiersTraites(patientsParAgent.getOrDefault(uid, 0L))
+                    .lettresEmises(lettresParAgent.getOrDefault(uid, 0L))
+                    .feuillesSoins(feuillesParAgent.getOrDefault(uid, 0L))
                     .anomalies(0)
                     .tempsMoyen(tempsMoyen)
                     .heuresTravailleesSemaine(round1(heuresSemaine))
@@ -114,10 +163,19 @@ public class StatsService {
         return stats;
     }
 
+    /** Transforme un résultat groupé [clé, count] en table de correspondance. */
+    private static Map<String, Long> compterParCle(List<Object[]> lignes) {
+        Map<String, Long> map = new HashMap<>();
+        for (Object[] ligne : lignes) {
+            map.put((String) ligne[0], ((Number) ligne[1]).longValue());
+        }
+        return map;
+    }
+
     private StatsDto computeStats(List<Facture> factures, String regionId, String pharmacieId) {
         long nombreFactures = factures.size();
         double montantTotal = factures.stream().mapToDouble(Facture::getMontantTotal).sum();
-        double montantCsu = montantTotal / 2.0;
+        double montantCsu = montantTotal * tauxPriseEnCharge;
         double montantMoyen = nombreFactures > 0 ? montantTotal / nombreFactures : 0;
 
         Map<String, Long> facturesParStatut = factures.stream()
@@ -151,26 +209,20 @@ public class StatsService {
         long totalFeuilles = 0;
 
         if (regionId != null && !regionId.isEmpty()) {
+            // Comptages délégués à la base : plus aucun findAll() global filtré en mémoire.
             List<String> structIds = structureSanitaireRepository.findByRegionId(regionId).stream()
                     .map(StructureSanitaire::getId)
                     .collect(Collectors.toList());
-            List<String> uids = userRepository.findAll().stream()
-                    .filter(u -> regionId.equals(u.getRegionId()))
+            List<String> uids = userRepository.findByRegionId(regionId).stream()
                     .map(User::getId)
                     .collect(Collectors.toList());
 
             if (!uids.isEmpty()) {
-                totalLettres = lettreGarantieRepository.findAll().stream()
-                        .filter(l -> uids.contains(l.getCreatedBy()))
-                        .count();
-                totalPatients = patientRepository.findAll().stream()
-                        .filter(p -> uids.contains(p.getCreatedBy()))
-                        .count();
+                totalLettres = lettreGarantieRepository.countByCreatedByIn(uids);
+                totalPatients = patientRepository.countByCreatedByIn(uids);
             }
             if (!structIds.isEmpty()) {
-                totalFeuilles = feuilleSoinsRepository.findAll().stream()
-                        .filter(fs -> structIds.contains(fs.getStructureSanitaireId()))
-                        .count();
+                totalFeuilles = feuilleSoinsRepository.countByStructureSanitaireIdIn(structIds);
             }
         } else if (pharmacieId != null && !pharmacieId.isEmpty()) {
             totalPatients = factures.stream()
@@ -374,25 +426,24 @@ public class StatsService {
     }
 
     public List<MonthData> getEvolutionMensuelle(String regionId, String pharmacieId, int annee) {
-        List<Facture> factures;
-        if (pharmacieId != null && !pharmacieId.isEmpty()) {
-            factures = factureRepository.findByPharmacieId(pharmacieId);
-        } else if (regionId != null && !regionId.isEmpty()) {
-            factures = factureRepository.findByRegionId(regionId);
-        } else {
-            factures = factureRepository.findAll();
-        }
+        // Agrégat calculé en base (COUNT + SUM par mois) : les factures — et surtout
+        // leurs lignes JSONB avec pièces jointes — ne sont plus chargées du tout.
+        String pid = (pharmacieId != null && !pharmacieId.isEmpty()) ? pharmacieId : null;
+        String rid = (pid == null && regionId != null && !regionId.isEmpty()) ? regionId : null;
 
-        Map<Integer, List<Facture>> byMonth = factures.stream()
-                .filter(f -> f.getAnnee() == annee)
-                .collect(Collectors.groupingBy(Facture::getMois));
+        Map<Integer, Long> nombreParMois = new HashMap<>();
+        Map<Integer, Double> montantParMois = new HashMap<>();
+        for (Object[] ligne : factureRepository.aggregatMensuel(annee, pid, rid)) {
+            int mois = ((Number) ligne[0]).intValue();
+            nombreParMois.put(mois, ((Number) ligne[1]).longValue());
+            montantParMois.put(mois, ((Number) ligne[2]).doubleValue());
+        }
 
         List<MonthData> evolution = new ArrayList<>();
         for (int i = 1; i <= 12; i++) {
-            List<Facture> facturesMois = byMonth.getOrDefault(i, new ArrayList<>());
-            long count = facturesMois.size();
-            double montant = facturesMois.stream().mapToDouble(Facture::getMontantTotal).sum();
-            evolution.add(new MonthData(i, annee, count, montant));
+            evolution.add(new MonthData(i, annee,
+                    nombreParMois.getOrDefault(i, 0L),
+                    montantParMois.getOrDefault(i, 0.0)));
         }
         return evolution;
     }

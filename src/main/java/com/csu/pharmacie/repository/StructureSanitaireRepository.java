@@ -12,4 +12,6 @@ public interface StructureSanitaireRepository extends JpaRepository<StructureSan
     Optional<StructureSanitaire> findByCode(String code);
     List<StructureSanitaire> findByRegionId(String regionId);
     List<StructureSanitaire> findByBcsuId(String bcsuId);
+    /** Postes de santé rattachés à une structure sanitaire (CS/EPS). */
+    List<StructureSanitaire> findByStructureRattachementId(String structureRattachementId);
 }

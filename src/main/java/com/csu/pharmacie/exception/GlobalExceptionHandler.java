@@ -7,6 +7,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -70,22 +71,28 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoResource(NoResourceFoundException ex) {
+        // Chemin statique introuvable (ex. GET /h2-console quand la console est désactivée) :
+        // sans ce handler, l'exception tombe dans handleGeneric(Exception) ci-dessous et
+        // renvoie un 500 trompeur au lieu du 404 attendu.
+        return build(HttpStatus.NOT_FOUND, "Ressource introuvable");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
-        log.error("Erreur interne non gérée", ex);
-        
-        // Trouver la cause racine
-        Throwable rootCause = ex;
-        while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
-            rootCause = rootCause.getCause();
-        }
-        
+        // Identifiant de corrélation : renvoyé au client ET tracé côté serveur,
+        // pour retrouver la pile complète dans les logs sans jamais exposer
+        // les détails techniques (SQL, classes, chemins) à l'extérieur.
+        String errorId = java.util.UUID.randomUUID().toString().substring(0, 8);
+        log.error("Erreur interne non gérée [{}]", errorId, ex);
+
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
         body.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
         body.put("error", HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase());
-        body.put("message", "Erreur interne: " + rootCause.getMessage());
-        body.put("details", ex.getMessage());
+        body.put("message", "Une erreur interne est survenue. Réessayez ou contactez le support avec la référence " + errorId + ".");
+        body.put("errorId", errorId);
         return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }

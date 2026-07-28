@@ -66,6 +66,17 @@ public class PharmacieController {
         }
     }
 
+    /** Export Excel des pharmacies avec leurs identifiants de connexion (après import). */
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exporterPharmacies() {
+        byte[] contenu = pharmacieService.exporterPharmaciesExcel();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"pharmacies_identifiants.xlsx\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(contenu);
+    }
+
     /** Télécharge un fichier Excel modèle à remplir pour l'import. */
     @GetMapping("/import-template")
     public ResponseEntity<byte[]> downloadImportTemplate() {
