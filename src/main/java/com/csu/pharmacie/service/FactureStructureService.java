@@ -79,6 +79,7 @@ public class FactureStructureService {
         return lettre;
     }
 
+    @Transactional(readOnly = true)
     public List<FactureStructure> getAllForCurrentUser(Integer mois, Integer annee, String regimeStr) {
         User user = getCurrentUser();
 
@@ -98,11 +99,13 @@ public class FactureStructureService {
             return factureRepository.findAllFiltre(m, a, regime);
         }
         if (user.getRole() == Role.SERVICE_REGIONAL) {
+            if (user.getRegionId() == null) return new ArrayList<>();
             // Le SR ne voit que les factures transmises et validées par le niveau de base
             // (exclusion BROUILLON / SOUMISE_CS / REJETEE_CS faite dans la requête).
             return factureRepository.findVisiblesParRegionFiltre(user.getRegionId(), m, a, regime);
         }
         if (user.getRole() == Role.STRUCTURE_SANITAIRE) {
+            if (user.getStructureSanitaireId() == null) return new ArrayList<>();
             // Ses propres factures uniquement (les factures des PS rattachés sont dans l'onglet dédié)
             return factureRepository.findByStructureFiltre(user.getStructureSanitaireId(), m, a, regime);
         }
@@ -118,20 +121,24 @@ public class FactureStructureService {
      * badges de notification. Même périmètre que {@link #getAllForCurrentUser()}, mais en
      * projection : aucune colonne JSONB (lignes, historique) n'est désérialisée.
      */
+    @Transactional(readOnly = true)
     public List<com.csu.pharmacie.dto.FactureStatutDto> getStatutsPourBadges() {
         User user = getCurrentUser();
         if (user.getRole() == Role.ADMIN || user.getRole() == Role.SERVICE_CENTRAL) {
             return factureRepository.findAllStatuts();
         }
         if (user.getRole() == Role.SERVICE_REGIONAL) {
+            if (user.getRegionId() == null) return new ArrayList<>();
             return factureRepository.findStatutsVisiblesParRegion(user.getRegionId());
         }
         if (user.getRole() == Role.STRUCTURE_SANITAIRE) {
+            if (user.getStructureSanitaireId() == null) return new ArrayList<>();
             return factureRepository.findStatutsByStructure(user.getStructureSanitaireId());
         }
         return new ArrayList<>();
     }
 
+    @Transactional
     public FactureStructure getById(String id) {
         FactureStructure facture = factureRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Facture non trouvée"));
@@ -753,38 +760,77 @@ public class FactureStructureService {
      * l'utilisateur courant. Seules les factures ENVOYÉES (et suivantes) sont
      * visibles : les brouillons restent privés au poste.
      */
+    /**
+     * Factures des postes de santé polarisés (rattachés) par la structure de
+     * l'utilisateur courant ou visibles par son rôle (ADMIN, Service Régional, Service Central).
+     * Seules les factures non-brouillon sont retournées.
+     */
+    @Transactional(readOnly = true)
     public List<FactureStructure> getFacturesPostesRattaches(Integer mois, Integer annee, String regimeStr) {
         User user = getCurrentUser();
-        if (user.getRole() != Role.STRUCTURE_SANITAIRE) {
-            throw new ForbiddenException("Réservé aux structures sanitaires");
-        }
-        StructureSanitaire structure = getCurrentStructure(user);
-        List<String> posteIds = structureRepository.findByStructureRattachementId(structure.getId()).stream()
-                .map(StructureSanitaire::getId)
-                .collect(Collectors.toList());
-        if (posteIds.isEmpty()) {
+        List<FactureStructure> factures;
+
+        if (user.getRole() == Role.ADMIN || user.getRole() == Role.SERVICE_CENTRAL) {
+            // Admin et Service Central voient toutes les factures émises par des postes de santé
+            factures = factureRepository.findAll().stream()
+                    .filter(f -> f != null && f.getStatut() != StatutFacture.BROUILLON)
+                    .filter(this::estFactureDePosteDeSante)
+                    .collect(Collectors.toList());
+        } else if (user.getRole() == Role.SERVICE_REGIONAL) {
+            // Service Régional voit les factures des postes de santé de sa région
+            String regionId = user.getRegionId();
+            factures = (regionId != null ? factureRepository.findByRegionId(regionId) : new ArrayList<FactureStructure>()).stream()
+                    .filter(f -> f != null && f.getStatut() != StatutFacture.BROUILLON)
+                    .filter(this::estFactureDePosteDeSante)
+                    .collect(Collectors.toList());
+        } else if (user.getRole() == Role.STRUCTURE_SANITAIRE) {
+            if (user.getStructureSanitaireId() == null) {
+                return new ArrayList<>();
+            }
+            StructureSanitaire structure = structureRepository.findById(user.getStructureSanitaireId()).orElse(null);
+            if (structure == null) {
+                return new ArrayList<>();
+            }
+            List<String> posteIds = structureRepository.findByStructureRattachementId(structure.getId()).stream()
+                    .map(StructureSanitaire::getId)
+                    .filter(java.util.Objects::nonNull)
+                    .collect(Collectors.toList());
+            if (posteIds.isEmpty()) {
+                return new ArrayList<>();
+            }
+            factures = posteIds.stream()
+                    .flatMap(id -> {
+                        List<FactureStructure> list = factureRepository.findByStructureSanitaireId(id);
+                        return list != null ? list.stream() : java.util.stream.Stream.empty();
+                    })
+                    .filter(f -> f != null && f.getStatut() != StatutFacture.BROUILLON)
+                    .collect(Collectors.toList());
+        } else {
             return new ArrayList<>();
         }
-        List<FactureStructure> factures = posteIds.stream()
-                .flatMap(id -> factureRepository.findByStructureSanitaireId(id).stream())
-                .filter(f -> f.getStatut() != StatutFacture.BROUILLON)
-                .collect(Collectors.toList());
 
         if (mois != null && mois > 0) {
-            factures = factures.stream().filter(f -> f.getMois() == mois).collect(Collectors.toList());
+            factures = factures.stream().filter(f -> f != null && f.getMois() == mois).collect(Collectors.toList());
         }
         if (annee != null && annee > 0) {
-            factures = factures.stream().filter(f -> f.getAnnee() == annee).collect(Collectors.toList());
+            factures = factures.stream().filter(f -> f != null && f.getAnnee() == annee).collect(Collectors.toList());
         }
         if (regimeStr != null && !regimeStr.trim().isEmpty()) {
             try {
                 Regime regimeEnum = Regime.valueOf(regimeStr.trim().toUpperCase());
-                factures = factures.stream().filter(f -> f.getRegime() == regimeEnum).collect(Collectors.toList());
+                factures = factures.stream().filter(f -> f != null && f.getRegime() == regimeEnum).collect(Collectors.toList());
             } catch (IllegalArgumentException e) {
                 // régime invalide : ignoré
             }
         }
         return factures;
+    }
+
+    private boolean estFactureDePosteDeSante(FactureStructure facture) {
+        if (facture == null || facture.getStructureSanitaireId() == null) return false;
+        return structureRepository.findById(facture.getStructureSanitaireId())
+                .map(s -> s.getTypeStructure() != null && s.getTypeStructure().equalsIgnoreCase("PS"))
+                .orElse(false);
     }
 
     // ----- Helpers -----

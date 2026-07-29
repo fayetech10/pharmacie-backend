@@ -1,5 +1,6 @@
 package com.csu.pharmacie.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,6 +17,7 @@ import java.time.LocalDate;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class LigneFactureStructure {
     private String designation;    // Acte / prestation
     private String codeActe;       // Code SITFAC (optionnel)

@@ -25,23 +25,32 @@ spring:
       max-request-size: ${MAX_REQUEST_SIZE:10MB}
   h2:
     console:
-      enabled: true
+      # Outil de debug local uniquement : à activer explicitement (H2_CONSOLE_ENABLED=true).
+      # Jamais actif par défaut → aucune exposition en production.
+      enabled: ${H2_CONSOLE_ENABLED:false}
       path: /h2-console
   application:
     name: pharmacie-csu
 
 app:
+  csu:
+    # Part du montant facturé prise en charge par la CSU (0.5 = 50 %).
+    # Règle métier centralisée ici plutôt que codée en dur dans les services.
+    taux-prise-en-charge: ${APP_CSU_TAUX:0.5}
   jwt:
-    # OBLIGATOIRE : définir APP_JWT_SECRET (>= 32 caractères aléatoires).
-    # Aucune valeur par défaut : le démarrage échoue volontairement si la variable
-    # n'est pas fournie (voir JwtUtil), pour éviter tout secret prévisible.
-    secret: ${APP_JWT_SECRET:OI90JICKOIJIRSJIJSIJCSIJCRSJVJIVRIJVJSRJRIVJISVIJ}
+    # PRODUCTION : définir APP_JWT_SECRET (>= 32 caractères aléatoires) — render.yaml
+    # le génère automatiquement. Sans variable, un secret ÉPHÉMÈRE est généré au
+    # démarrage (voir JwtUtil) : pratique en local, mais les sessions ne survivent
+    # pas à un redémarrage. Un secret fourni mais trop court fait échouer le démarrage.
+    secret: ${APP_JWT_SECRET:}
     expiration: ${APP_JWT_EXPIRATION:86400000}
 
 cors:
   # Origines autorisées (séparées par des virgules). Surcharger via CORS_ALLOWED_ORIGINS en prod.
   # Les motifs wildcard sont acceptés (ex: https://*.vercel.app pour les previews Vercel).
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  # http://192.168.*:4200 : accès depuis les autres appareils du réseau local (tests mobile).
+  # Variantes https:// : dev-server servi en HTTPS (npm run start:https) pour tester la caméra du scanner QR sur mobile.
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://192.168.*:4200,https://localhost:4200,https://192.168.*:4200}
 
 springdoc:
   api-docs:
