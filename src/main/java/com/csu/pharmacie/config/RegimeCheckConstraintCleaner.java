@@ -80,13 +80,17 @@ public class RegimeCheckConstraintCleaner implements CommandLineRunner {
     /** Contraintes CHECK d'une table dont la clause correspond au motif SQL LIKE fourni. */
     private List<String> findCheckConstraints(String table, String motifClause) {
         try {
+            // UPPER(tc.TABLE_NAME) : H2 stocke les identifiants non quotés en MAJUSCULES, PostgreSQL
+            // en minuscules. Sans ce UPPER, le filtre « = 'FACTURES_STRUCTURE' » ne matchait qu'en
+            // H2 (test) et jamais en prod Postgres (table « factures_structure ») → les contraintes
+            // figées survivaient au démarrage. Les libellés passés (table) sont déjà en MAJUSCULES.
             return jdbc.queryForList(
                     "SELECT tc.CONSTRAINT_NAME " +
                     "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
                     "JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc " +
                     "  ON tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME " +
                     " AND tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA " +
-                    "WHERE tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = 'CHECK' " +
+                    "WHERE UPPER(tc.TABLE_NAME) = ? AND tc.CONSTRAINT_TYPE = 'CHECK' " +
                     "  AND UPPER(cc.CHECK_CLAUSE) LIKE ?",
                     String.class, table, motifClause);
         } catch (Exception e) {
