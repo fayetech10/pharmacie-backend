@@ -3,9 +3,11 @@ package com.csu.pharmacie.service;
 import com.csu.pharmacie.dto.DossierPatientDto;
 import com.csu.pharmacie.dto.PatientRequest;
 import com.csu.pharmacie.entity.*;
+import com.csu.pharmacie.exception.BusinessException;
 import com.csu.pharmacie.exception.ForbiddenException;
 import com.csu.pharmacie.exception.ResourceNotFoundException;
 import com.csu.pharmacie.repository.*;
+import com.csu.pharmacie.utils.NumeroGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -235,7 +237,6 @@ public class PatientService {
 
         // 5. Feuilles de soins délivrées au patient (circuit patient → agent bureau → structure)
         List<FeuilleSoins> feuillesSoins = feuilleSoinsRepository.findByPatientId(patientId);
-
         return DossierPatientDto.builder()
                 .patient(patient)
                 .lettresGarantie(lettres)
@@ -349,17 +350,17 @@ public class PatientService {
                 return candidat;
             }
         }
-        throw new com.csu.pharmacie.exception.BusinessException("Impossible de générer un numéro unique de lettre de garantie, veuillez réessayer");
+        throw new BusinessException("Impossible de générer un numéro unique de lettre de garantie, veuillez réessayer");
     }
 
     private String genererNumeroUniqueFDS() {
         for (int i = 0; i < 5; i++) {
-            String candidat = com.csu.pharmacie.utils.NumeroGenerator.generer("FDS");
+            String candidat = NumeroGenerator.generer("FDS");
             if (feuilleSoinsRepository.findByNumero(candidat).isEmpty()) {
                 return candidat;
             }
         }
-        throw new com.csu.pharmacie.exception.BusinessException("Impossible de générer un numéro unique de feuille de soins, veuillez réessayer");
+        throw new BusinessException("Impossible de générer un numéro unique de feuille de soins, veuillez réessayer");
     }
 
     @Transactional
