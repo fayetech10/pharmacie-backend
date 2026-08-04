@@ -66,8 +66,8 @@ public interface FactureRepository extends JpaRepository<Facture, String> {
     // agrège en base au lieu de charger les factures entières (lignes + images).
     @Query("SELECT f.mois, COUNT(f), COALESCE(SUM(f.montantTotal), 0) FROM Facture f "
             + "WHERE f.annee = :annee "
-            + "AND (:pharmacieId IS NULL OR f.pharmacieId = :pharmacieId) "
-            + "AND (:regionId IS NULL OR f.regionId = :regionId) "
+            + "AND (CAST(:pharmacieId AS string) IS NULL OR f.pharmacieId = :pharmacieId) "
+            + "AND (CAST(:regionId AS string) IS NULL OR f.regionId = :regionId) "
             + "GROUP BY f.mois")
     List<Object[]> aggregatMensuel(@Param("annee") int annee,
                                    @Param("pharmacieId") String pharmacieId,

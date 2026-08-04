@@ -20,7 +20,7 @@ public interface FactureStructureRepository extends JpaRepository<FactureStructu
     // Remplacent le chargement complet suivi de filtres en mémoire.
     @Query("SELECT f FROM FactureStructure f WHERE f.structureSanitaireId = :structureId "
             + "AND (:mois = 0 OR f.mois = :mois) AND (:annee = 0 OR f.annee = :annee) "
-            + "AND (:regime IS NULL OR f.regime = :regime)")
+            + "AND (CAST(:regime AS string) IS NULL OR f.regime = :regime)")
     List<FactureStructure> findByStructureFiltre(@Param("structureId") String structureId,
                                                  @Param("mois") int mois, @Param("annee") int annee,
                                                  @Param("regime") Regime regime);
@@ -31,13 +31,13 @@ public interface FactureStructureRepository extends JpaRepository<FactureStructu
             + "com.csu.pharmacie.entity.StatutFacture.SOUMISE_CS, "
             + "com.csu.pharmacie.entity.StatutFacture.REJETEE_CS) "
             + "AND (:mois = 0 OR f.mois = :mois) AND (:annee = 0 OR f.annee = :annee) "
-            + "AND (:regime IS NULL OR f.regime = :regime)")
+            + "AND (CAST(:regime AS string) IS NULL OR f.regime = :regime)")
     List<FactureStructure> findVisiblesParRegionFiltre(@Param("regionId") String regionId,
                                                        @Param("mois") int mois, @Param("annee") int annee,
                                                        @Param("regime") Regime regime);
 
     @Query("SELECT f FROM FactureStructure f WHERE (:mois = 0 OR f.mois = :mois) "
-            + "AND (:annee = 0 OR f.annee = :annee) AND (:regime IS NULL OR f.regime = :regime)")
+            + "AND (:annee = 0 OR f.annee = :annee) AND (CAST(:regime AS string) IS NULL OR f.regime = :regime)")
     List<FactureStructure> findAllFiltre(@Param("mois") int mois, @Param("annee") int annee,
                                          @Param("regime") Regime regime);
 
