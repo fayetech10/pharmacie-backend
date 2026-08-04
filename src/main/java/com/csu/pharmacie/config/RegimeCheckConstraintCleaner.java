@@ -55,6 +55,14 @@ public class RegimeCheckConstraintCleaner implements CommandLineRunner {
         // Filtre sur « ELIGIBLE » (valeur de l'enum) : sans ambiguïté avec les contraintes
         // NOT NULL que PostgreSQL expose aussi dans CHECK_CONSTRAINTS.
         supprimerCheckObsoletes("MEDICAMENTS", "%ELIGIBLE%", "statut");
+
+        // Statut des factures (structure + pharmacie) : StatutFacture a gagné SOUMISE_CS /
+        // REJETEE_CS (circuit Poste de Santé → Centre de Santé). La CHECK figée à la création
+        // des tables ignore ces valeurs → l'envoi d'une facture par un poste (statut SOUMISE_CS)
+        // échoue en 500 sur toute base préexistante. Filtre sur « BROUILLON » (présent dans
+        // toutes les versions de l'enum) pour viser la CHECK du statut sans toucher au NOT NULL.
+        supprimerCheckObsoletes("FACTURES_STRUCTURE", "%BROUILLON%", "statut");
+        supprimerCheckObsoletes("FACTURES", "%BROUILLON%", "statut");
     }
 
     /** Supprime les contraintes CHECK d'une table dont la clause correspond au motif donné. */
