@@ -1,2 +1,13 @@
 target/
 .h2data/
+# Base H2 partagée par le cœur et les microservices en développement local.
+.donnees/
+# Journaux des services lancés par demarrer.ps1.
+.journaux/
+# Fichiers de base H2 où qu'ils soient (anciens coeur/db/…) : données locales.
+*.mv.db
+*.trace.db
+# Copies de l'espace de travail IntelliJ (configurations d'exécution locales).
+.idea/workspace.xml*
+# Pièces déposées à l'exécution.
+uploads/

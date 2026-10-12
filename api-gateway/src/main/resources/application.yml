@@ -1,0 +1,132 @@
+server:
+  port: ${PORT:${SERVER_PORT:8080}}
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      # ─────────────────────────────────────────────────────────────────────────
+      # Les URLs sont celles que le dashboard appelle DÉJÀ : le découpage en
+      # microservices ne demande aucune modification des écrans existants.
+      #
+      # /api/factures-structure, /api/hors-csu/factures et /api/beneficiaires sont
+      # servis par DEUX services selon le compte connecté. Le prédicat « Role »
+      # (voir PredicatRole) lit le rôle dans le jeton et aiguille en conséquence.
+      # L'ordre compte : la première route qui correspond gagne, donc les routes
+      # avec prédicat de rôle passent avant leur route de repli.
+      #
+      # Les routes /interne/** ne sont volontairement PAS déclarées : elles ne sont
+      # joignables que de service à service, à l'intérieur du réseau applicatif.
+      # ─────────────────────────────────────────────────────────────────────────
+      routes:
+        # ---- Structures : les chemins PAS ENCORE PORTÉS dans l'identité, servis par le cœur ----
+        # DOIT précéder la route « identite », qui réclame tout /api/structures-sanitaires/**.
+        # Sans elle, l'export et le modèle Excel étaient pris pour un identifiant par le
+        # GET /{id} de l'identité (« Structure sanitaire introuvable : export »), et la
+        # suppression comme l'import répondaient une erreur : l'identité ne les expose pas.
+        - id: structures-coeur
+          uri: ${SERVICES_COEUR_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/structures-sanitaires/export,/api/structures-sanitaires/import-postes,/api/structures-sanitaires/import-postes-template
+        - id: structures-suppression-coeur
+          uri: ${SERVICES_COEUR_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/structures-sanitaires/*
+            - Method=DELETE
+
+        # ---- Identité : authentification, comptes, régions, districts, structures ----
+        - id: identite
+          uri: ${SERVICES_IDENTITE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/auth/**,/api/utilisateurs/**,/api/regions/**,/api/districts/**,/api/structures-sanitaires/**
+
+        # ---- Référentiel : services, prestations, prix, tarifs Hors CSU ----
+        - id: referentiel
+          uri: ${SERVICES_REFERENTIEL_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/referentiel/**,/api/hors-csu/tarifs/**
+
+        # ---- Pharmacie : officines, stock, caisse ----
+        - id: pharmacie
+          uri: ${SERVICES_PHARMACIE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/pharmacie/**
+
+        # ---- Factures de structure : les chemins PAS ENCORE PORTÉS, servis par le cœur ----
+        # DOIT précéder poste-sante et centre-sante, qui réclament tout
+        # /api/factures-structure/**. Sans cette route, « rechercher-lettre » est pris pour
+        # un identifiant de facture par leur GET /{id} : l'écran répond « Facture
+        # introuvable : rechercher-lettre », et l'export Excel/Word un 404 aussi obscur.
+        #
+        # La route de repli générale ne suffit pas ici : le préfixe est déjà réclamé, la
+        # requête part vers le microservice et n'atteint jamais le cœur. Chaque chemin porté
+        # plus tard se retire simplement de cette liste.
+        - id: factures-structure-coeur
+          uri: ${SERVICES_COEUR_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/factures-structure/rechercher-lettre,/api/factures-structure/brouillons,/api/factures-structure/export-groupe/**,/api/factures-structure/*/export/excel,/api/factures-structure/*/export/word,/api/factures-structure/*/export/enfants-pdf
+
+        # ---- Poste de santé : facturation, bénéficiaires, Hors CSU ----
+        - id: poste-sante
+          uri: ${SERVICES_POSTE_SANTE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/factures-structure/**,/api/beneficiaires/**,/api/hors-csu/**
+            - Role=POSTE_SANTE
+
+        # ---- Vérification des cartes CSU (carte.sencsu.sn) : poste de santé ET agent BCSU ----
+        # Sans prédicat de rôle : le service poste-santé filtre lui-même les rôles admis.
+        # DOIT précéder « coeur », qui réclame tout /api/**.
+        - id: carte-csu
+          uri: ${SERVICES_POSTE_SANTE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/carte-csu
+
+        # ---- Centre de santé / EPS : facturation, supervision des postes, Hors CSU ----
+        # Route de repli des chemins ci-dessus : centre, district, région, national.
+        # Le centre sait lire les factures des postes qu'il polarise (via son API interne),
+        # ce qui donne aussi aux échelons de supervision une entrée unique.
+        - id: centre-sante
+          uri: ${SERVICES_CENTRE_SANTE_URL:http://localhost:8085}
+          predicates:
+            - Path=/api/factures-structure/**,/api/hors-csu/**,/api/consolidation/**
+
+        # ---- Cœur : tout ce qu'aucun microservice ne réclame ----
+        # DERNIÈRE de la liste, et c'est tout l'intérêt : la première route qui
+        # correspond gagne, donc celle-ci ne récupère que le reste.
+        #
+        # Sans elle, les familles d'URL pas encore portées répondent 404 dès que la
+        # passerelle occupe le port 8080 — /api/patients, /api/lettres-garantie,
+        # /api/bons-commande, /api/feuilles-soins, /api/factures, /api/medicaments,
+        # /api/pointages, /api/constats, /api/stats, /api/export, /api/pharmacies —
+        # alors que le tableau de bord les appelle toujours. C'est ce qui rend vraie
+        # la promesse « le dashboard appelle les mêmes URLs qu'avant ».
+        - id: coeur
+          uri: ${SERVICES_COEUR_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/**
+
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://192.168.*:4200,https://localhost:4200}
+            allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+            allowedHeaders: [Origin, Content-Type, Accept, Authorization]
+            exposedHeaders: [Content-Disposition]
+            allowCredentials: true
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
+
+services:
+  identite-url: ${SERVICES_IDENTITE_URL:http://localhost:8081}
+  referentiel-url: ${SERVICES_REFERENTIEL_URL:http://localhost:8082}
+  pharmacie-url: ${SERVICES_PHARMACIE_URL:http://localhost:8083}
+  poste-sante-url: ${SERVICES_POSTE_SANTE_URL:http://localhost:8084}
+  centre-sante-url: ${SERVICES_CENTRE_SANTE_URL:http://localhost:8085}
+  # 8090 et non 8080 : le cœur écoute 8080 par défaut, place déjà prise par la
+  # passerelle. Hors Docker, le lancer avec SERVER_PORT=8090 (cf. demarrer.ps1).
+  coeur-url: ${SERVICES_COEUR_URL:http://localhost:8090}
+
+logging:
+  level:
+    com.csu.pharmacie: ${LOG_LEVEL:INFO}

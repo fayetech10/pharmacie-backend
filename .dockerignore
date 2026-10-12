@@ -1,0 +1,24 @@
+# Contexte de build Docker : tout ce qui n'est pas source ou pom.xml.
+# Sans ce fichier, les target/ des 9 modules (~490 Mo) sont transferes au demon
+# a CHAQUE build, avant meme la premiere instruction du Dockerfile.
+target/
+*/target/
+
+# Bases locales et journaux (cf. .gitignore)
+.h2data/
+.donnees/
+.journaux/
+*/db/
+uploads/
+
+.git/
+.gitignore
+.idea/
+*.iml
+
+# Scripts et docs : n'interviennent pas dans la compilation
+demarrer.ps1
+*.md
+render.yaml
+Dockerfile
+.dockerignore

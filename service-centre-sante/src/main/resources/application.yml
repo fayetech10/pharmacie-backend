@@ -1,0 +1,68 @@
+server:
+  port: ${PORT:${SERVER_PORT:8085}}
+
+spring:
+  application:
+    name: centre-sante
+  datasource:
+    # ─────────────────────────────────────────────────────────────────────────
+    # BASE PARTAGÉE avec le cœur et les autres services.
+    #
+    # Les microservices ne dupliquent pas le modèle : ils travaillent sur les MÊMES
+    # tables (factures_structure, structures_sanitaires, users…). Ils doivent donc
+    # pointer sur la même base — c'est le prix à payer pour ne pas recopier les
+    # données existantes, et c'est un choix assumé.
+    #
+    # Le défaut vise le PostgreSQL local, celui que démarre docker-compose sur 5432 :
+    # un service lancé à la main sans variable d'environnement tombe donc sur LA MÊME
+    # base que la pile Docker, et non sur un fichier H2 privé où il serait seul.
+    # stringtype=unspecified est exigé par les colonnes jsonb.
+    # ─────────────────────────────────────────────────────────────────────────
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pharmacie_csu?stringtype=unspecified}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.postgresql.Driver}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    open-in-view: false
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${MAX_FILE_SIZE:10MB}
+      max-request-size: ${MAX_REQUEST_SIZE:10MB}
+
+app:
+  jwt:
+    # DOIT être identique sur tous les services : c'est ce secret partagé qui permet à
+    # chacun de valider localement un jeton émis par service-identite.
+    secret: ${APP_JWT_SECRET:}
+    expiration: ${APP_JWT_EXPIRATION:86400000}
+  csu:
+    # Forfait « Enfants de moins de 5 ans » en FCFA (0 = désactivé, les prix du référentiel s'appliquent).
+    forfait-zero-cinq-ans: ${APP_CSU_FORFAIT_0_5:0}
+    mode-forfait: ${APP_CSU_MODE_FORFAIT:PAR_LIGNE}
+    # Saisies Espace PS du centre (sans lettre de garantie) : 1 400 FCFA par patient.
+    forfait-espace-ps: ${APP_CSU_FORFAIT_0_5_ESPACE_PS:1400}
+    mode-forfait-espace-ps: ${APP_CSU_MODE_FORFAIT_ESPACE_PS:PAR_BENEFICIAIRE}
+    controle-age-bloquant: ${APP_CSU_CONTROLE_AGE:true}
+
+services:
+  identite-url: ${SERVICES_IDENTITE_URL:http://localhost:8081}
+  referentiel-url: ${SERVICES_REFERENTIEL_URL:http://localhost:8082}
+  pharmacie-url: ${SERVICES_PHARMACIE_URL:http://localhost:8083}
+  poste-sante-url: ${SERVICES_POSTE_SANTE_URL:http://localhost:8084}
+  centre-sante-url: ${SERVICES_CENTRE_SANTE_URL:http://localhost:8085}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://localhost:8080}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.csu.pharmacie: ${LOG_LEVEL:INFO}

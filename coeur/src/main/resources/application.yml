@@ -1,0 +1,85 @@
+server:
+  # Render injecte la variable PORT ; on la respecte (fallback SERVER_PORT puis 8080 en local).
+  port: ${PORT:${SERVER_PORT:8080}}
+
+spring:
+  datasource:
+    # PostgreSQL local par défaut — la même base que les microservices et que la pile
+    # Docker (docker compose up -d postgres). Le cœur partage leurs tables : lui donner
+    # une base à part le rendrait aveugle à tout ce qu'ils écrivent.
+    # stringtype=unspecified est exigé par les colonnes jsonb.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pharmacie_csu?stringtype=unspecified}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.postgresql.Driver}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      # Crée / met à jour automatiquement le schéma (tables + index) au démarrage.
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    # Évite de garder la session ouverte pendant le rendu de la réponse (anti-pattern de perf).
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${MAX_FILE_SIZE:10MB}
+      max-request-size: ${MAX_REQUEST_SIZE:10MB}
+  h2:
+    console:
+      # Outil de debug local uniquement : à activer explicitement (H2_CONSOLE_ENABLED=true),
+      # ce que fait déjà le profil « local ». Défaut à FALSE : la console est une interface
+      # JDBC libre et sa route est publique (voir SecurityConfig) — elle ne doit jamais être
+      # joignable en production, où le driver H2 est pourtant présent dans le jar.
+      enabled: ${H2_CONSOLE_ENABLED:false}
+      path: /h2-console
+  application:
+    name: pharmacie-csu
+
+app:
+  csu:
+    # Part du montant facturé prise en charge par la CSU (0.5 = 50 %).
+    # Règle métier centralisée ici plutôt que codée en dur dans les services.
+    taux-prise-en-charge: ${APP_CSU_TAUX:0.5}
+  facturation:
+    cloture:
+      # Clôture mensuelle AUTOMATIQUE des factures de structure (circuit CSU) :
+      # le serveur transmet lui-même les brouillons complets du mois écoulé, sans
+      # bouton « Envoyer ». auto=false coupe l'automatisme (envoi redevient manuel).
+      auto: ${APP_CLOTURE_AUTO:true}
+      # Jour du mois (suivant) à partir duquel le mois précédent est clôturé : délai
+      # de grâce laissé pour saisir les patients vus en fin de mois.
+      jour: ${APP_CLOTURE_JOUR:5}
+      # Heure de passage quotidienne (cron Spring, fuseau Africa/Dakar).
+      cron: ${APP_CLOTURE_CRON:0 0 23 * * *}
+      # Garde-fou de démarrage : premier mois (AAAA-MM) pouvant être clôturé
+      # automatiquement. Les mois antérieurs ne partent jamais seuls — évite une
+      # transmission massive rétroactive le jour de la mise en service. Vide = sans plancher.
+      a-partir-de: ${APP_CLOTURE_A_PARTIR_DE:}
+    cs-eps:
+      # Facturation des centres de santé et EPS en deux temps (spécification « Facturation
+      # CS / EPS ») : chaque saisie BCSU devient un dossier « à compléter » de la facture du
+      # mois de sa structure, que l'import de fin de mois complétera. Premier mois (AAAA-MM)
+      # concerné ; les prises en charge antérieures gardent l'ancien circuit. Vide = actif.
+      a-partir-de: ${APP_CS_EPS_A_PARTIR_DE:}
+  jwt:
+    # PRODUCTION : définir APP_JWT_SECRET (>= 32 caractères aléatoires) — render.yaml
+    # le génère automatiquement. Sans variable, un secret ÉPHÉMÈRE est généré au
+    # démarrage (voir JwtUtil) : pratique en local, mais les sessions ne survivent
+    # pas à un redémarrage. Un secret fourni mais trop court fait échouer le démarrage.
+    secret: ${APP_JWT_SECRET:}
+    expiration: ${APP_JWT_EXPIRATION:86400000}
+
+cors:
+  # Origines autorisées (séparées par des virgules). Surcharger via CORS_ALLOWED_ORIGINS en prod.
+  # Les motifs wildcard sont acceptés (ex: https://*.vercel.app pour les previews Vercel).
+  # http://192.168.*:4200 : accès depuis les autres appareils du réseau local (tests mobile).
+  # Variantes https:// : dev-server servi en HTTPS (npm run start:https) pour tester la caméra du scanner QR sur mobile.
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://192.168.*:4200,https://localhost:4200,https://192.168.*:4200}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
