@@ -29,6 +29,9 @@ public interface DepotPrestationHorsCsu extends JpaRepository<PrestationHorsCsu,
     /** Tarifs que la structure s'est fixés — ce qu'elle administre dans son écran Paramètres. */
     List<PrestationHorsCsu> findByStructureIdOrderByCategorieAscDesignationAsc(String structureId);
 
+    /** Lignes nationales réservées à un type de structure (ex. « PS »), actives ou non. */
+    List<PrestationHorsCsu> findByStructureIdIsNullAndTypeStructureOrderByCategorieAscDesignationAsc(String typeStructure);
+
     /** Tarifs nationaux, complétés des surcharges propres à la structure. */
     @Query("""
             select p from PrestationHorsCsu p

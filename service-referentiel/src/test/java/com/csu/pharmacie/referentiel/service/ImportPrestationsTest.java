@@ -69,7 +69,7 @@ class ImportPrestationsTest {
                 {"CPC", "DEXCHLORPHENIRAMINE Sirop", null},
                 {"Tri enfant", "DEXCHLORPHENIRAMINE Sirop", null},
                 {"ICP", "Consultation : CPC", 500},
-        }), "poste-1");
+        }), "poste-1", true, null);
 
         assertEquals(4, r.getLignesLues());
         assertEquals(4, r.getCrees(), "une prestation par service, sans écrasement");
@@ -97,7 +97,7 @@ class ImportPrestationsTest {
                 {"PEDIATRIE", "Cotrimoxazole sirop", null},
                 {"Pédiatrie", "Amoxicilline sirop", null},
                 {"PADIATRIE", "Ibuprofène sirop", null},
-        }), "poste-1");
+        }), "poste-1", true, null);
 
         assertEquals(List.of("CPC", "Dépositaire", "Pédiatrie"),
                 enregistres.stream().map(PrestationHorsCsu::getCategorie).distinct().sorted().toList(),
@@ -114,7 +114,7 @@ class ImportPrestationsTest {
                 {"Service", "Prestation", "Prix (FCFA)"},
                 {"DEPOSITAIRE", "FLAGYL SIROP", null},
                 {"ICP", "Flagyl sirop", null},
-        }), "poste-1");
+        }), "poste-1", true, null);
 
         assertEquals(1, r.getMisAJour());
         assertEquals(1, r.getCrees());
@@ -129,7 +129,7 @@ class ImportPrestationsTest {
         lignes.add(new Object[]{"Service", "Prestation", "Prix (FCFA)"});
         for (int i = 0; i < 8; i++) lignes.add(new Object[]{"ICP", "Acte " + i, 100});
         lignes.add(new Object[]{"Diclo. Cp", "Seringue 10cc", 100});
-        ResultatImportReferentiel r = service.importer(classeur(lignes.toArray(new Object[0][])), "poste-1");
+        ResultatImportReferentiel r = service.importer(classeur(lignes.toArray(new Object[0][])), "poste-1", true, null);
 
         assertTrue(r.getAvertissements().stream().anyMatch(a -> a.contains("« Diclo. Cp » (1 ligne)")),
                 r.getAvertissements().toString());
@@ -141,7 +141,7 @@ class ImportPrestationsTest {
         ResultatImportReferentiel r = service.importer(classeur(new Object[][]{
                 {"Code", "Designation", "Categorie", "Prix"},
                 {"CONS_GEN", "Consultation générale", "Consultation", 1000},
-        }), "poste-1");
+        }), "poste-1", true, null);
         assertEquals(1, r.getCrees());
         PrestationHorsCsu t = tarif("Consultation", "Consultation générale");
         assertEquals("CONS_GEN", t.getCode());

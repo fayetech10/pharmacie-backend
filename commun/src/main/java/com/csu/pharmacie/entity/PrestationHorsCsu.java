@@ -60,6 +60,14 @@ public class PrestationHorsCsu {
      */
     private String structureId;
 
+    /**
+     * Ligne nationale réservée à un type de structure : {@code "PS"} = prestations par défaut
+     * des postes de santé (liste fournie le 14/10/2026), invisibles aux centres et EPS.
+     * {@code null} = toutes les structures. Sans objet pour un tarif propre à une structure.
+     */
+    @Column(name = "type_structure", length = 10)
+    private String typeStructure;
+
     @Builder.Default
     @Column(nullable = false)
     private boolean actif = true;

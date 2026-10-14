@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import com.csu.pharmacie.commun.securite.ContexteUtilisateur;
+import com.csu.pharmacie.commun.securite.UtilisateurAuthentifie;
+import com.csu.pharmacie.entity.Role;
 import com.csu.pharmacie.commun.web.ExceptionMetier;
 import com.csu.pharmacie.referentiel.dto.ResultatImportReferentiel;
 import com.csu.pharmacie.referentiel.service.ServiceHorsCsu;
@@ -37,7 +39,15 @@ public class ControleurHorsCsu {
      */
     @GetMapping("/applicables")
     public List<PrestationHorsCsu> applicables() {
-        return serviceHorsCsu.applicables(ContexteUtilisateur.courant().getStructureId());
+        UtilisateurAuthentifie appelant = ContexteUtilisateur.courant();
+        return serviceHorsCsu.applicables(appelant.getStructureId(), appelant.estPoste());
+    }
+
+    /** Prestations par défaut des postes de santé (liste nationale « PS »), pour l'administration. */
+    @GetMapping("/postes-par-defaut")
+    public List<PrestationHorsCsu> postesParDefaut() {
+        ContexteUtilisateur.exigerRole(Role.ADMIN);
+        return serviceHorsCsu.parDefautPostes();
     }
 
     @GetMapping
@@ -51,15 +61,19 @@ public class ControleurHorsCsu {
         return serviceHorsCsu.mesTarifs(ContexteUtilisateur.courant().getStructureId());
     }
 
-    /** Modèle Excel prérempli du catalogue applicable : il ne reste qu'à saisir les prix. */
+    /**
+     * Modèle Excel prérempli du catalogue applicable : il ne reste qu'à saisir les prix.
+     * {@code typeStructure} (administration) : la liste nationale de ce type, ex. « PS ».
+     */
     @GetMapping("/modele")
-    public ResponseEntity<byte[]> modele() {
-        String structureId = ContexteUtilisateur.courant().getStructureId();
+    public ResponseEntity<byte[]> modele(@RequestParam(required = false) String typeStructure) {
+        UtilisateurAuthentifie appelant = ContexteUtilisateur.courant();
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"modele_tarifs.xlsx\"")
                 .contentType(MediaType.valueOf(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                .body(serviceHorsCsu.modeleImport(structureId));
+                .body(serviceHorsCsu.modeleImport(appelant.getStructureId(), appelant.estPoste(),
+                        typeNational(appelant.getStructureId(), typeStructure)));
     }
 
     @PostMapping
@@ -82,12 +96,33 @@ public class ControleurHorsCsu {
 
     /**
      * Import Excel. Pour une structure, les tarifs importés sont d'office les siens : le
-     * {@code structureId} de la requête n'est honoré que pour un compte d'administration.
+     * {@code structureId} de la requête n'est honoré que pour un compte d'administration,
+     * comme {@code typeStructure} (« PS » : prestations par défaut des postes de santé).
      */
     @PostMapping("/import")
     public ResultatImportReferentiel importer(@RequestPart("fichier") MultipartFile fichier,
-                                              @RequestParam(required = false) String structureId) {
-        return serviceHorsCsu.importer(fichier, perimetreEcriture(structureId));
+                                              @RequestParam(required = false) String structureId,
+                                              @RequestParam(required = false) String typeStructure) {
+        String perimetre = perimetreEcriture(structureId);
+        String type = typeNational(perimetre, typeStructure);
+        if (type != null) {
+            ContexteUtilisateur.exigerRole(Role.ADMIN); // la liste des postes vaut pour tout le pays
+        }
+        return serviceHorsCsu.importer(fichier, perimetre, ContexteUtilisateur.courant().estPoste(), type);
+    }
+
+    /**
+     * Type de liste nationale demandé : pris en compte pour un import / modèle national
+     * seulement (un point de soins écrit toujours dans les siens), et limité aux types connus.
+     */
+    private static String typeNational(String perimetre, String demande) {
+        if (perimetre != null || demande == null || demande.isBlank()) {
+            return null;
+        }
+        if (!ServiceHorsCsu.POSTES.equalsIgnoreCase(demande.trim())) {
+            throw ExceptionMetier.invalide("Type de structure inconnu « " + demande + " » (attendu : PS)");
+        }
+        return ServiceHorsCsu.POSTES;
     }
 
     /**

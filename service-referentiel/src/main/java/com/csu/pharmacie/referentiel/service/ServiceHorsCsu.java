@@ -36,6 +36,18 @@ public class ServiceHorsCsu {
 
     private final DepotPrestationHorsCsu depot;
 
+    /** Type des lignes nationales « prestations par défaut des postes de santé ». */
+    public static final String POSTES = "PS";
+
+    /**
+     * Une ligne nationale réservée à un type de structure n'est visible que de ce type : les
+     * prestations par défaut des postes ne s'invitent ni chez un centre ni chez un EPS.
+     */
+    private static boolean visible(PrestationHorsCsu tarif, boolean poste) {
+        String type = tarif.getTypeStructure();
+        return tarif.getStructureId() != null || type == null || (poste && POSTES.equalsIgnoreCase(type));
+    }
+
     /**
      * Tarifs réellement <b>facturables</b> par la structure : son catalogue, moins les
      * lignes nationales qu'elle n'a jamais tarifées.
@@ -48,9 +60,11 @@ public class ServiceHorsCsu {
      *
      * <p>Une ligne à 0 F <em>propre à la structure</em> est en revanche conservée : là,
      * le zéro est un choix (gratuité assumée), pas un prix manquant.</p>
+     *
+     * @param poste l'appelant est un poste de santé (il voit les prestations par défaut des postes)
      */
-    public List<PrestationHorsCsu> applicables(String structureId) {
-        return catalogue(structureId).stream()
+    public List<PrestationHorsCsu> applicables(String structureId, boolean poste) {
+        return catalogue(structureId, poste).stream()
                 .filter(tarif -> tarif.getStructureId() != null || tarif.getPrix() > 0)
                 .toList();
     }
@@ -63,10 +77,11 @@ public class ServiceHorsCsu {
      * (modèle d'import Excel), à distinguer de {@link #applicables} qui ne rend que le
      * vendable.</p>
      */
-    public List<PrestationHorsCsu> catalogue(String structureId) {
+    public List<PrestationHorsCsu> catalogue(String structureId, boolean poste) {
         List<PrestationHorsCsu> tarifs = depot.applicablesA(structureId);
         // En cas de doublon de code, la version propre à la structure l'emporte.
         return tarifs.stream()
+                .filter(tarif -> visible(tarif, poste))
                 .collect(java.util.stream.Collectors.toMap(
                         p -> p.getCode().toLowerCase(Locale.ROOT),
                         p -> p,
@@ -77,6 +92,11 @@ public class ServiceHorsCsu {
 
     public List<PrestationHorsCsu> lister() {
         return depot.findAll();
+    }
+
+    /** Prestations par défaut des postes de santé (écran d'administration), actives ou non. */
+    public List<PrestationHorsCsu> parDefautPostes() {
+        return depot.findByStructureIdIsNullAndTypeStructureOrderByCategorieAscDesignationAsc(POSTES);
     }
 
     /** Tarifs administrés par la structure elle-même (son écran « Paramètres »). */
@@ -173,11 +193,16 @@ public class ServiceHorsCsu {
      * Modèle d'import « Service | Prestation | Prix (FCFA) », prérempli du catalogue de la
      * structure (le sien et le national) : il ne reste qu'à saisir les prix manquants, puis à
      * le réimporter tel quel. Un prix vide se laisse vide (0 F n'est pas un prix).
+     *
+     * @param typeNational administration seulement : la liste nationale de ce type (ex. « PS »)
      */
-    public byte[] modeleImport(String structureId) {
+    public byte[] modeleImport(String structureId, boolean poste, String typeNational) {
         // catalogue() et non applicables() : le modèle doit justement proposer les lignes
         // PAS encore tarifées — c'est tout son objet.
-        List<PrestationHorsCsu> catalogue = new ArrayList<>(catalogue(structureId));
+        List<PrestationHorsCsu> catalogue = new ArrayList<>(structureId == null && typeNational != null
+                ? depot.findByStructureIdIsNullAndTypeStructureOrderByCategorieAscDesignationAsc(typeNational)
+                        .stream().filter(PrestationHorsCsu::isActif).toList()
+                : catalogue(structureId, poste));
         catalogue.sort(Comparator.comparing((PrestationHorsCsu t) -> t.getCategorie() == null ? "" : t.getCategorie(),
                         String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(PrestationHorsCsu::getDesignation, String.CASE_INSENSITIVE_ORDER));
@@ -232,10 +257,16 @@ public class ServiceHorsCsu {
      *       garde son prix (réimporter le modèle ne remet rien à zéro).</li>
      *   <li>Services ramenés à une seule écriture ({@link NomsDeServices}) ; les services
      *       rares et inconnus sont signalés.</li>
+     *   <li>{@code typeNational} (administration, import national seulement) : la liste
+     *       nationale de ce type — « PS », les prestations par défaut des postes de santé.</li>
      * </ul>
+     *
+     * @param poste l'appelant est un poste de santé (codes repris des prestations par défaut des postes)
      */
     @Transactional
-    public ResultatImportReferentiel importer(MultipartFile fichier, String structureId) {
+    public ResultatImportReferentiel importer(MultipartFile fichier, String structureId, boolean poste,
+                                              String typeNational) {
+        String type = structureId == null ? typeNational : null;
         ResultatImportReferentiel resultat = new ResultatImportReferentiel();
         List<LecteurExcel.LigneImport> lignes;
         try {
@@ -247,11 +278,18 @@ public class ServiceHorsCsu {
 
         // Recherche scopée à la structure : sans cela, l'import d'un poste retrouvait la ligne
         // d'un AUTRE poste (ou la ligne nationale) et la réécrivait.
-        List<PrestationHorsCsu> siens = new ArrayList<>(tarifsDuPerimetre(structureId));
+        List<PrestationHorsCsu> siens = new ArrayList<>(tarifsDuPerimetre(structureId, type));
         List<PrestationHorsCsu> nationaux = structureId == null ? List.of()
-                : depot.applicablesA(structureId).stream().filter(t -> t.getStructureId() == null).toList();
+                : depot.applicablesA(structureId).stream()
+                        .filter(t -> t.getStructureId() == null && visible(t, poste)).toList();
         Set<String> codesPris = new HashSet<>();
         siens.forEach(t -> codesPris.add(t.getCode().toUpperCase(Locale.ROOT)));
+        if (structureId == null) {
+            // Import national : un code reste unique sur TOUT le national (liste des postes
+            // comprise), sinon le catalogue d'une structure fusionnerait deux lignes en une.
+            depot.findAll().stream().filter(t -> t.getStructureId() == null)
+                    .forEach(t -> codesPris.add(t.getCode().toUpperCase(Locale.ROOT)));
+        }
 
         NomsDeServices services = new NomsDeServices(
                 siens.stream().map(PrestationHorsCsu::getCategorie).filter(c -> c != null && !c.isBlank()).toList(),
@@ -289,6 +327,7 @@ public class ServiceHorsCsu {
                         : codeLibre(designation, service, nationaux, codesPris);
                 tarif.setCode(codeRetenu);
                 tarif.setStructureId(structureId);
+                tarif.setTypeStructure(type);
                 codesPris.add(codeRetenu);
                 siens.add(tarif);
             }
@@ -327,12 +366,17 @@ public class ServiceHorsCsu {
         return resultat;
     }
 
-    /** Tarifs déjà enregistrés dans le périmètre de l'import (la structure, ou le national). */
-    private List<PrestationHorsCsu> tarifsDuPerimetre(String structureId) {
+    /**
+     * Tarifs déjà enregistrés dans le périmètre de l'import : la structure, ou la liste
+     * nationale du type donné (« PS » = postes ; {@code null} = national commun).
+     */
+    private List<PrestationHorsCsu> tarifsDuPerimetre(String structureId, String typeNational) {
         if (structureId != null && !structureId.isBlank()) {
             return depot.findByStructureIdOrderByCategorieAscDesignationAsc(structureId);
         }
-        return depot.findAll().stream().filter(t -> t.getStructureId() == null).toList();
+        return depot.findAll().stream()
+                .filter(t -> t.getStructureId() == null && java.util.Objects.equals(t.getTypeStructure(), typeNational))
+                .toList();
     }
 
     private static PrestationHorsCsu trouverParCode(List<PrestationHorsCsu> tarifs, String code) {
