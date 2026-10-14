@@ -28,7 +28,7 @@ spring:
         - id: structures-coeur
           uri: ${SERVICES_COEUR_URL:http://localhost:8090}
           predicates:
-            - Path=/api/structures-sanitaires/export,/api/structures-sanitaires/import-postes,/api/structures-sanitaires/import-postes-template
+            - Path=/api/structures-sanitaires/export,/api/structures-sanitaires/export-pdf,/api/structures-sanitaires/import-postes,/api/structures-sanitaires/import-postes-template
         - id: structures-suppression-coeur
           uri: ${SERVICES_COEUR_URL:http://localhost:8090}
           predicates:

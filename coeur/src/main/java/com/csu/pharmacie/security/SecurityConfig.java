@@ -83,6 +83,12 @@ public class SecurityConfig {
                       .requestMatchers(antMatcher(HttpMethod.GET, "/api/users/*/parametrage")).authenticated()
                       .requestMatchers(antMatcher(HttpMethod.PUT, "/api/users/parametrage")).hasAnyRole("BCSU", "ADMIN")
                       .requestMatchers(antMatcher("/api/users/**")).hasAnyRole("ADMIN", "SERVICE_REGIONAL")
+                      // Exports PDF des identifiants (sélection d'ids en POST) : mêmes rôles que les exports
+                      // Excel plus bas. DOIVENT précéder les règles POST générales des pharmacies et des
+                      // structures, qui écarteraient le Service Central.
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/pharmacies/export-pdf"),
+                              antMatcher(HttpMethod.POST, "/api/structures-sanitaires/export-pdf"))
+                      .hasAnyRole("SERVICE_REGIONAL", "SERVICE_CENTRAL", "ADMIN")
                       // Gestion des pharmacies : réservée au Service Régional et à l'Admin
                       // (le Service Central peut consulter via GET mais pas créer/modifier/supprimer)
                       .requestMatchers(antMatcher(HttpMethod.POST, "/api/pharmacies/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")

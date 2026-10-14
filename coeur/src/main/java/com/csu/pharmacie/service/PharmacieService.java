@@ -301,6 +301,46 @@ public class PharmacieService {
     }
 
     /**
+     * PDF des identifiants de connexion des pharmacies choisies, dans l'ordre reçu (celui de
+     * l'écran, recherche appliquée). Sans sélection : toutes les pharmacies visibles. Une
+     * pharmacie hors du périmètre de l'utilisateur (autre région pour un SR) est ignorée.
+     */
+    public byte[] exporterIdentifiantsPdf(List<String> ids) {
+        List<Pharmacie> visibles = getAllPharmacies();
+        List<Pharmacie> pharmacies;
+        if (ids == null || ids.isEmpty()) {
+            pharmacies = visibles;
+        } else {
+            Map<String, Pharmacie> parId = visibles.stream()
+                    .collect(Collectors.toMap(Pharmacie::getId, p -> p, (a, b) -> a));
+            pharmacies = ids.stream().distinct().map(parId::get).filter(java.util.Objects::nonNull).toList();
+        }
+
+        Map<String, User> comptes = new java.util.HashMap<>();
+        for (Pharmacie p : pharmacies) {
+            if (p.getResponsableId() != null) {
+                userRepository.findById(p.getResponsableId()).ifPresent(u -> comptes.put(p.getId(), u));
+            }
+        }
+        java.util.Set<String> generiques = ExportIdentifiants.auMotDePasseGenerique(comptes.values(), passwordEncoder);
+        List<IdentifiantsPdf.Ligne> lignes = pharmacies.stream().map(p -> {
+            User compte = comptes.get(p.getId());
+            return new IdentifiantsPdf.Ligne(p.getNom(), compte != null ? compte.getUsername() : null,
+                    ExportIdentifiants.motDePasse(compte, generiques));
+        }).toList();
+
+        java.util.Set<String> regions = pharmacies.stream().map(Pharmacie::getRegionId).collect(Collectors.toSet());
+        String contexte = "Pharmacies";
+        if (regions.size() == 1 && regions.iterator().next() != null) {
+            contexte += regionRepository.findById(regions.iterator().next())
+                    .map(r -> " — Région de " + r.getNom()).orElse("");
+        }
+        int n = pharmacies.size();
+        return IdentifiantsPdf.generer(new IdentifiantsPdf.Entete(contexte,
+                n + (n > 1 ? " pharmacies" : " pharmacie"), "Pharmacie", "chaque pharmacie"), lignes);
+    }
+
+    /**
      * Export Excel des pharmacies avec leurs identifiants de connexion, destiné à être
      * remis aux officines après un import en masse. Le mot de passe n'est jamais stocké
      * en clair : la colonne indique le mot de passe générique tant qu'il n'a pas été changé.

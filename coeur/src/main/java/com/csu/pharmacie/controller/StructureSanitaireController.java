@@ -77,6 +77,19 @@ public class StructureSanitaireController {
                 .body(bytes);
     }
 
+    /**
+     * PDF des identifiants de connexion des structures dont les ids sont envoyés (tableau
+     * JSON, ordre de l'écran) ; corps vide = toutes les structures visibles.
+     */
+    @PostMapping("/export-pdf")
+    public ResponseEntity<byte[]> exporterIdentifiantsPdf(@RequestBody(required = false) List<String> ids) {
+        byte[] bytes = structureService.exporterIdentifiantsPdf(ids);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"identifiants_structures.pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(bytes);
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<StructureSanitaire> getById(@PathVariable String id) {
         return ResponseEntity.ok(structureService.getById(id));

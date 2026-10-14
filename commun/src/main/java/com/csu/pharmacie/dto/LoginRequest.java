@@ -6,7 +6,7 @@ import lombok.Data;
 @Data
 public class LoginRequest {
     // L'identifiant de connexion peut être un email OU le username attribué aux pharmacies
-    // et structures sanitaires (ex. « dk.dkcs01 »). Surtout PAS de @Email ici : il rejetterait
+    // (ex. « dk.ph001 ») et structures sanitaires (ex. « DKCS01 »). Surtout PAS de @Email ici : il rejetterait
     // ces usernames (400) avant l'authentification, alors que le service et le frontend gèrent
     // déjà « email OU username ». Le champ garde le nom « email » (contrat inchangé côté client).
     @NotBlank(message = "L'identifiant est obligatoire")

@@ -66,6 +66,19 @@ public class PharmacieController {
         }
     }
 
+    /**
+     * PDF des identifiants de connexion des pharmacies dont les ids sont envoyés (tableau
+     * JSON, ordre de l'écran) ; corps vide = toutes les pharmacies visibles.
+     */
+    @PostMapping("/export-pdf")
+    public ResponseEntity<byte[]> exporterIdentifiantsPdf(@RequestBody(required = false) List<String> ids) {
+        byte[] contenu = pharmacieService.exporterIdentifiantsPdf(ids);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"identifiants_pharmacies.pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(contenu);
+    }
+
     /** Export Excel des pharmacies avec leurs identifiants de connexion (après import). */
     @GetMapping("/export")
     public ResponseEntity<byte[]> exporterPharmacies() {

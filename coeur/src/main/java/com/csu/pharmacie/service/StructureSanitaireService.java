@@ -44,21 +44,26 @@ public class StructureSanitaireService {
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     /**
-     * Identifiant de connexion tenant compte de la région : {CODE_REGION}.{CODE_STRUCTURE}
-     * (ex. DK.DKCS01). Un suffixe numérique est ajouté en cas de collision.
+     * Identifiant de connexion d'une NOUVELLE structure : son code, en majuscules (ex. THPS121).
+     * Le code porte déjà la région ({REGION}{TYPE}{NN}) : l'ancien format
+     * {code_region}.{code_structure} la répétait (« th.thps121 »). Même règle que
+     * service-identite ({@code identifiantDisponible}).
+     *
+     * <p>Les comptes créés avant gardent leur identifiant (« th.thps01 ») : ils ont déjà été
+     * remis aux structures, les renommer couperait leur accès.</p>
      */
-    private String genererUsername(String regionId, String codeStructure) {
-        String codeRegion = regionId == null ? null : regionRepository.findById(regionId)
-                .map(com.csu.pharmacie.entity.Region::getCode)
-                .filter(c -> c != null && !c.isBlank())
-                .orElse(null);
+    static String identifiantDeBase(String codeStructure) {
+        String base = codeStructure == null ? "" : codeStructure.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
+        return base.isEmpty() ? "STR" : base;
+    }
 
-        String base = ((codeRegion == null ? "CSU" : codeRegion) + "." + (codeStructure == null ? "" : codeStructure))
-                .replaceAll("[^A-Za-z0-9.]", "").toLowerCase(Locale.ROOT);
+    /** {@link #identifiantDeBase}, suffixé (_2, _3…) s'il est déjà pris — y compris comme email. */
+    private String genererUsername(String codeStructure) {
+        String base = identifiantDeBase(codeStructure);
         String candidat = base;
         int suffixe = 1;
-        while (userRepository.existsByUsernameIgnoreCase(candidat)) {
-            candidat = base + suffixe++;
+        while (userRepository.existsByUsernameIgnoreCase(candidat) || userRepository.findByEmail(candidat).isPresent()) {
+            candidat = base + "_" + (++suffixe);
         }
         return candidat;
     }
@@ -152,13 +157,13 @@ public class StructureSanitaireService {
         structure = structureRepository.save(structure);
 
         // Crée TOUJOURS le compte de connexion (rôle STRUCTURE_SANITAIRE) : l'identifiant est le
-        // username généré ({REGION}.{CODE}). Les structures — les postes de santé en particulier —
+        // username généré (le code, ex. THPS121). Les structures — les postes de santé en particulier —
         // n'ont pas toujours d'email ; auparavant, sans email, aucun compte n'était créé et la
         // structure ne pouvait donc jamais se connecter.
         // À défaut d'email, le username sert aussi de valeur au champ « email » du compte : il ne
         // doit jamais être nul, car le principal JWT et tous les getCurrentUser() du projet
         // reposent sur findByEmail(...). (email et username sont sans « @ » donc sans collision.)
-        String username = genererUsername(request.getRegionId(), structure.getCode());
+        String username = genererUsername(structure.getCode());
         // Sans mot de passe fourni : mot de passe générique à changer à la 1re connexion.
         boolean motDePasseGenerique = (request.getPassword() == null || request.getPassword().isBlank());
         String rawPassword = motDePasseGenerique
@@ -511,6 +516,76 @@ public class StructureSanitaireService {
         } catch (Exception e) {
             throw new BusinessException("Impossible de générer l'export Excel : " + e.getMessage());
         }
+    }
+
+    /**
+     * PDF des identifiants de connexion des structures choisies, dans l'ordre reçu (celui de
+     * l'écran, filtres appliqués). Sans sélection : toutes les structures visibles. Une
+     * structure hors du périmètre de l'utilisateur (autre région pour un SR) est ignorée.
+     * L'en-tête se déduit de la sélection : type commun, district commun, région commune.
+     */
+    public byte[] exporterIdentifiantsPdf(List<String> ids) {
+        List<StructureSanitaire> visibles = getAll();
+        List<StructureSanitaire> structures;
+        if (ids == null || ids.isEmpty()) {
+            structures = visibles;
+        } else {
+            Map<String, StructureSanitaire> parId = visibles.stream()
+                    .collect(java.util.stream.Collectors.toMap(StructureSanitaire::getId, s -> s, (a, b) -> a));
+            structures = ids.stream().distinct().map(parId::get).filter(java.util.Objects::nonNull).toList();
+        }
+
+        Map<String, User> comptes = new java.util.HashMap<>();
+        for (StructureSanitaire s : structures) {
+            User compte = compteDeConnexion(s);
+            if (compte != null) {
+                comptes.put(s.getId(), compte);
+            }
+        }
+        java.util.Set<String> generiques = ExportIdentifiants.auMotDePasseGenerique(comptes.values(), passwordEncoder);
+        List<IdentifiantsPdf.Ligne> lignes = structures.stream().map(s -> {
+            User compte = comptes.get(s.getId());
+            return new IdentifiantsPdf.Ligne(s.getNom(), compte != null ? compte.getUsername() : null,
+                    ExportIdentifiants.motDePasse(compte, generiques));
+        }).toList();
+
+        return IdentifiantsPdf.generer(enteteIdentifiants(structures), lignes);
+    }
+
+    private IdentifiantsPdf.Entete enteteIdentifiants(List<StructureSanitaire> structures) {
+        java.util.Set<String> types = structures.stream().map(StructureSanitaireService::typeEffectif)
+                .collect(java.util.stream.Collectors.toSet());
+        String type = types.size() == 1 ? types.iterator().next() : "";
+        // { singulier, pluriel, en-tête de colonne, destinataire de chaque ligne }
+        String[] libelles = switch (type) {
+            case "PS" -> new String[]{"poste de santé", "postes de santé", "Poste de santé", "chaque poste"};
+            case "CS" -> new String[]{"centre de santé", "centres de santé", "Centre de santé", "chaque centre"};
+            case "EPS" -> new String[]{"hôpital (EPS)", "hôpitaux (EPS)", "Hôpital", "chaque hôpital"};
+            default -> new String[]{"structure sanitaire", "structures sanitaires", "Structure", "chaque structure"};
+        };
+
+        List<String> precisions = new java.util.ArrayList<>();
+        java.util.Set<String> districts = structures.stream().map(StructureSanitaire::getDistrictId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (districts.size() == 1 && districts.iterator().next() != null) {
+            try {
+                Map<String, Object> d = jdbc.queryForMap("SELECT code, nom FROM districts WHERE id = ?", districts.iterator().next());
+                precisions.add(d.get("nom") + (d.get("code") != null ? " (" + d.get("code") + ")" : ""));
+            } catch (Exception e) {
+                log.debug("District introuvable pour l'en-tête du PDF : {}", e.getMessage());
+            }
+        }
+        java.util.Set<String> regions = structures.stream().map(StructureSanitaire::getRegionId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (regions.size() == 1 && regions.iterator().next() != null) {
+            regionRepository.findById(regions.iterator().next())
+                    .ifPresent(r -> precisions.add("Région de " + r.getNom()));
+        }
+
+        String libelle = Character.toUpperCase(libelles[1].charAt(0)) + libelles[1].substring(1);
+        String contexte = precisions.isEmpty() ? libelle : libelle + " — " + String.join(" · ", precisions);
+        int n = structures.size();
+        return new IdentifiantsPdf.Entete(contexte, n + " " + (n > 1 ? libelles[1] : libelles[0]), libelles[2], libelles[3]);
     }
 
     private String trim(String value) {
