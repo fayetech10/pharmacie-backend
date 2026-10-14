@@ -157,8 +157,10 @@ public class ServiceFacturation {
         }
 
         List<FactureStructure> factures;
-        if (role == Role.SERVICE_REGIONAL && utilisateur.getRegionId() != null) {
-            factures = depot.findByRegionId(utilisateur.getRegionId());
+        if (role == Role.SERVICE_REGIONAL) {
+            // Sans région sur le compte, rien — et surtout pas la vue nationale.
+            String region = utilisateur.getRegionId();
+            factures = region == null || region.isBlank() ? List.of() : depot.findByRegionId(region);
         } else if (role == Role.DISTRICT && utilisateur.getDistrictId() != null) {
             factures = depot.findByDistrictId(utilisateur.getDistrictId());
         } else {
@@ -216,6 +218,41 @@ public class ServiceFacturation {
         StructureDto structure = clientIdentite.structure(facture.getStructureSanitaireId());
         String district = structure == null ? null : structure.getDistrictId();
         return district == null || district.isBlank() ? null : district;
+    }
+
+    /**
+     * Région d'une facture : celle figée à sa création, à défaut celle de sa structure
+     * émettrice (factures du cœur, créées sans région). {@code null} si aucune.
+     */
+    protected String regionDe(FactureStructure facture) {
+        if (facture.getRegionId() != null && !facture.getRegionId().isBlank()) {
+            return facture.getRegionId();
+        }
+        if (facture.getStructureSanitaireId() == null) {
+            return null;
+        }
+        StructureDto structure = clientIdentite.structure(facture.getStructureSanitaireId());
+        String region = structure == null ? null : structure.getRegionId();
+        return region == null || region.isBlank() ? null : region;
+    }
+
+    /**
+     * Un service régional n'accède qu'aux factures de SA région (celle du jeton) : connaître
+     * l'identifiant d'une facture suffisait à la lire — PDF et pièces compris — depuis une
+     * autre région. Sans région sur le compte, aucune facture. Les autres rôles ne sont pas
+     * concernés ici.
+     */
+    private void verifierRegion(FactureStructure facture, UtilisateurAuthentifie utilisateur) {
+        if (utilisateur.getRole() != Role.SERVICE_REGIONAL) {
+            return;
+        }
+        String region = utilisateur.getRegionId();
+        if (region == null || region.isBlank()) {
+            throw ExceptionMetier.interdit("Votre compte n'est rattaché à aucune région");
+        }
+        if (!region.equals(regionDe(facture))) {
+            throw ExceptionMetier.interdit("Cette facture n'appartient pas à votre région");
+        }
     }
 
     /**
@@ -305,6 +342,11 @@ public class ServiceFacturation {
         if (utilisateur.getRole() == Role.DISTRICT) {
             throw ExceptionMetier.interdit("Cette facture n'appartient pas à votre district");
         }
+        if (utilisateur.getRole() == Role.SERVICE_REGIONAL) {
+            verifierRegion(facture, utilisateur);
+            return;
+        }
+        // Niveau central et administrateur : accès national.
         if (utilisateur.getRole() != null && utilisateur.getRole().estSuperviseur()) {
             return;
         }
@@ -2008,15 +2050,14 @@ public class ServiceFacturation {
         return depot.save(facture);
     }
 
-    /** Un service régional ne tranche que sur sa région ; les rôles nationaux ne sont pas limités. */
+    /**
+     * Un service régional ne tranche que sur sa région — facture sans région figée rattrapée
+     * par sa structure, compte sans région refusé ; les rôles nationaux ne sont pas limités.
+     */
     private FactureStructure chargerPourRegion(String id, UtilisateurAuthentifie utilisateur) {
         FactureStructure facture = depot.findById(id)
                 .orElseThrow(() -> ExceptionMetier.introuvable("Facture introuvable : " + id));
-        if (utilisateur.getRole() == Role.SERVICE_REGIONAL
-                && utilisateur.getRegionId() != null
-                && !utilisateur.getRegionId().equals(facture.getRegionId())) {
-            throw ExceptionMetier.interdit("Cette facture n'appartient pas à votre région.");
-        }
+        verifierRegion(facture, utilisateur);
         return facture;
     }
 

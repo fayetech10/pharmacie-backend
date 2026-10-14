@@ -226,7 +226,8 @@ public class ServiceConsolidation {
     /**
      * Détermine et contrôle le district à consolider. Un compte de district ne consolide
      * que le sien : accepter un identifiant arbitraire donnerait à chaque district la
-     * visibilité sur tous les autres.
+     * visibilité sur tous les autres. Pour la même raison, un service régional ne consolide
+     * qu'un district de SA région.
      */
     private String districtAutorise(String districtIdDemande) {
         UtilisateurAuthentifie utilisateur = ContexteUtilisateur.courant();
@@ -237,6 +238,9 @@ public class ServiceConsolidation {
         if (superviseurNational) {
             if (districtIdDemande == null || districtIdDemande.isBlank()) {
                 throw ExceptionMetier.invalide("Précisez le district à consolider");
+            }
+            if (role == Role.SERVICE_REGIONAL) {
+                verifierDistrictDeLaRegion(districtIdDemande, utilisateur.getRegionId());
             }
             return districtIdDemande;
         }
@@ -251,6 +255,20 @@ public class ServiceConsolidation {
             throw ExceptionMetier.interdit("Vous ne pouvez consolider que votre propre district.");
         }
         return districtUtilisateur;
+    }
+
+    /**
+     * La région du district est relue au service identité — l'identifiant demandé ne prouve
+     * rien. District inconnu (ou service injoignable) : refusé plutôt qu'ouvert.
+     */
+    private void verifierDistrictDeLaRegion(String districtId, String regionUtilisateur) {
+        if (regionUtilisateur == null || regionUtilisateur.isBlank()) {
+            throw ExceptionMetier.interdit("Votre compte n'est rattaché à aucune région.");
+        }
+        DistrictDto district = clientIdentite.district(districtId);
+        if (district == null || !regionUtilisateur.equals(district.getRegionId())) {
+            throw ExceptionMetier.interdit("Vous ne pouvez consolider que les districts de votre région.");
+        }
     }
 
     private EnteteDocument entete(String districtId, List<FactureStructure> factures, Integer mois,
