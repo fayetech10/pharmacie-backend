@@ -35,6 +35,9 @@ public interface DepotFactureStructure extends JpaRepository<FactureStructure, S
     /** Factures des structures d'un district — rattrape celles dont le district n'a pas été figé. */
     List<FactureStructure> findByStructureSanitaireIdIn(Collection<String> structureSanitaireIds);
 
+    /** Factures d'une année pour un ensemble de structures — activités du réseau d'une région. */
+    List<FactureStructure> findByStructureSanitaireIdInAndAnnee(Collection<String> structureSanitaireIds, int annee);
+
     List<FactureStructure> findByRegionId(String regionId);
 
     List<FactureStructure> findByStatut(StatutFacture statut);

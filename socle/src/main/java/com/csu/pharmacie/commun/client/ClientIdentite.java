@@ -25,6 +25,9 @@ public class ClientIdentite {
     private static final ParameterizedTypeReference<List<StructureDto>> LISTE_STRUCTURES =
             new ParameterizedTypeReference<>() {
             };
+    private static final ParameterizedTypeReference<List<DistrictDto>> LISTE_DISTRICTS =
+            new ParameterizedTypeReference<>() {
+            };
 
     private final RestClient client;
 
@@ -65,6 +68,17 @@ public class ClientIdentite {
                 .uri(uri -> uri.path("/interne/structures").queryParam("regionId", regionId).build())
                 .retrieve()
                 .body(LISTE_STRUCTURES));
+    }
+
+    /**
+     * Districts d'une région. Appel facultatif : un service d'identité qui ne connaît pas encore
+     * cette route renvoie une liste vide, et l'appelant déduit alors les districts des structures.
+     */
+    public List<DistrictDto> districtsDeLaRegion(String regionId) {
+        return AppelInterServices.optionnel(NOM, () -> client.get()
+                .uri(uri -> uri.path("/interne/districts").queryParam("regionId", regionId).build())
+                .retrieve()
+                .body(LISTE_DISTRICTS), List.of());
     }
 
     public DistrictDto district(String id) {

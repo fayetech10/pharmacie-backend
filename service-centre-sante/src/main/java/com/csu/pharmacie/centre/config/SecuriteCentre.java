@@ -76,6 +76,11 @@ public class SecuriteCentre {
                                 antMatcher("/api/hors-csu/**"))
                         .hasAnyRole("CENTRE_SANTE", "STRUCTURE_SANITAIRE", "ADMIN")
 
+                        // Activités du réseau d'une région (14/10/2026) : service régional (SA
+                        // région, imposée en service) et niveau central. AVANT la règle suivante.
+                        .requestMatchers(antMatcher(HttpMethod.GET, "/api/consolidation/region/**"))
+                        .hasAnyRole("SERVICE_REGIONAL", "SERVICE_CENTRAL", "ADMIN")
+
                         // Consolidation district : réservée STRICTEMENT au rôle District (08/10/2026).
                         .requestMatchers(antMatcher("/api/consolidation/**"))
                         .hasRole("DISTRICT")

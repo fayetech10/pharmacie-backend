@@ -10,6 +10,7 @@ import com.csu.pharmacie.commun.client.dto.DistrictDto;
 import com.csu.pharmacie.commun.client.dto.StructureDto;
 import com.csu.pharmacie.entity.StructureSanitaire;
 import com.csu.pharmacie.commun.web.ExceptionMetier;
+import com.csu.pharmacie.identite.depot.DepotDistrict;
 import com.csu.pharmacie.identite.depot.DepotStructure;
 import com.csu.pharmacie.identite.service.ServiceDistrict;
 import com.csu.pharmacie.identite.service.ServiceStructure;
@@ -31,6 +32,7 @@ public class ControleurInterne {
     private final ServiceStructure serviceStructure;
     private final ServiceDistrict serviceDistrict;
     private final DepotStructure depotStructure;
+    private final DepotDistrict depotDistrict;
 
     @GetMapping("/structures/{id}")
     public StructureDto structure(@PathVariable String id) {
@@ -63,5 +65,17 @@ public class ControleurInterne {
     @GetMapping("/districts/{id}")
     public DistrictDto district(@PathVariable String id) {
         return serviceDistrict.versDto(serviceDistrict.parId(id));
+    }
+
+    /**
+     * Districts d'une région (activités du réseau du service régional). Comme pour les
+     * structures, aucun filtrage selon l'appelant : le service appelant a déjà imposé la région.
+     */
+    @GetMapping("/districts")
+    public List<DistrictDto> districts(@RequestParam String regionId) {
+        if (regionId == null || regionId.isBlank()) {
+            throw ExceptionMetier.invalide("Préciser la région : regionId");
+        }
+        return depotDistrict.findByRegionId(regionId).stream().map(serviceDistrict::versDto).toList();
     }
 }
