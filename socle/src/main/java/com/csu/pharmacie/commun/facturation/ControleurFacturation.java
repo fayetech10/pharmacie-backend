@@ -1,5 +1,6 @@
 package com.csu.pharmacie.commun.facturation;
 
+import com.csu.pharmacie.commun.export.ApercuImage;
 import com.csu.pharmacie.entity.FactureStructure;
 import com.csu.pharmacie.entity.LigneFactureStructure;
 import com.csu.pharmacie.entity.Regime;
@@ -113,16 +114,26 @@ public abstract class ControleurFacturation {
         return service().piece(id, dossierId, type);
     }
 
+    /** {@code ?format=image} : aperçu JPEG pour le dossier patient (voir {@link ApercuImage}). */
     @GetMapping("/{id}/dossiers/{dossierId}/attestation")
-    public ResponseEntity<byte[]> attestationSoins(@PathVariable String id, @PathVariable String dossierId) {
-        return fichier(service().pdfAttestationSoins(id, dossierId), MediaType.APPLICATION_PDF,
-                service().nomFichierDossier(id, dossierId, "attestation_soins"));
+    public ResponseEntity<byte[]> attestationSoins(@PathVariable String id, @PathVariable String dossierId,
+                                                   @RequestParam(required = false) String format) {
+        return document(service().pdfAttestationSoins(id, dossierId),
+                service().nomFichierDossier(id, dossierId, "attestation_soins"), format);
     }
 
     @GetMapping("/{id}/dossiers/{dossierId}/fiche-assure")
-    public ResponseEntity<byte[]> ficheAssure(@PathVariable String id, @PathVariable String dossierId) {
-        return fichier(service().pdfFicheAssure(id, dossierId), MediaType.APPLICATION_PDF,
-                service().nomFichierDossier(id, dossierId, "fiche_assure"));
+    public ResponseEntity<byte[]> ficheAssure(@PathVariable String id, @PathVariable String dossierId,
+                                              @RequestParam(required = false) String format) {
+        return document(service().pdfFicheAssure(id, dossierId),
+                service().nomFichierDossier(id, dossierId, "fiche_assure"), format);
+    }
+
+    private static ResponseEntity<byte[]> document(byte[] pdf, String nomPdf, String format) {
+        if ("image".equals(format)) {
+            return fichier(ApercuImage.depuisPdf(pdf), MediaType.IMAGE_JPEG, nomPdf.replaceFirst("\\.pdf$", ".jpg"));
+        }
+        return fichier(pdf, MediaType.APPLICATION_PDF, nomPdf);
     }
 
     @DeleteMapping("/{id}")

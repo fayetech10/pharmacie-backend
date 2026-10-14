@@ -79,6 +79,13 @@
       <artifactId>itextpdf</artifactId>
       <version>${itext.version}</version>
     </dependency>
+    <!-- Aperçu en image des documents du dossier patient (attestation, fiche assuré) : les
+         téléphones n'affichent pas un PDF dans la page (Chrome Android). -->
+    <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox</artifactId>
+      <version>${pdfbox.version}</version>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
