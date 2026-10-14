@@ -803,17 +803,17 @@ public class GenerateurExcel {
             totalFacture = totalVert;
 
             XSSFFont corps = police(classeur, 8, false, sombre);
-            // Retour à la ligne et haut de cellule : les prestations d'une visite y sont listées.
+            // Centré verticalement : l'identité fusionnée d'un patient s'affiche au milieu de son bloc.
             XSSFCellStyle texteCorps = style(classeur, corps);
             texteCorps.setAlignment(HorizontalAlignment.LEFT);
-            texteCorps.setVerticalAlignment(VerticalAlignment.TOP);
+            texteCorps.setVerticalAlignment(VerticalAlignment.CENTER);
             texteCorps.setWrapText(true);
             bordures(texteCorps);
             texteFacture = texteCorps;
 
             XSSFCellStyle nombreCorps = style(classeur, corps);
             nombreCorps.setAlignment(HorizontalAlignment.RIGHT);
-            nombreCorps.setVerticalAlignment(VerticalAlignment.TOP);
+            nombreCorps.setVerticalAlignment(VerticalAlignment.CENTER);
             nombreCorps.setDataFormat(formatMontant);
             bordures(nombreCorps);
             nombreFacture = nombreCorps;

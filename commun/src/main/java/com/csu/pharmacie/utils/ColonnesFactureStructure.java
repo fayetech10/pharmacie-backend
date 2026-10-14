@@ -156,9 +156,10 @@ public final class ColonnesFactureStructure {
                     grille[r][c] = new CelluleFusion(v, 1);
                 }
             } else {
-                grille[0][c] = new CelluleFusion(agreger(colonne, visite), 1);
+                // Une seule cellule pour tout le bloc : valeur en haut, lignes suivantes couvertes (null).
+                grille[0][c] = new CelluleFusion(agreger(colonne, visite), n);
                 for (int r = 1; r < n; r++) {
-                    grille[r][c] = new CelluleFusion("", 1);
+                    grille[r][c] = null;
                 }
             }
         }

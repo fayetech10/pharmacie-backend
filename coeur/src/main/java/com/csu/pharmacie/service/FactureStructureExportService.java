@@ -181,12 +181,12 @@ public class FactureStructureExportService {
             cellCenterStyle.setVerticalAlignment(VerticalAlignment.CENTER);
             setCellBorders(cellCenterStyle);
 
-            // Texte : une visite de plusieurs prestations les liste à la ligne dans la cellule
-            // (retour à la ligne, haut de cellule pour que les listes restent alignées).
+            // Texte : centré verticalement, pour que l'identité du patient fusionnée sur les
+            // lignes de ses prestations s'affiche au milieu de son bloc.
             CellStyle cellLeftStyle = workbook.createCellStyle();
             cellLeftStyle.setFont(bodyFont);
             cellLeftStyle.setAlignment(HorizontalAlignment.LEFT);
-            cellLeftStyle.setVerticalAlignment(VerticalAlignment.TOP);
+            cellLeftStyle.setVerticalAlignment(VerticalAlignment.CENTER);
             cellLeftStyle.setWrapText(true);
             setCellBorders(cellLeftStyle);
 
@@ -200,7 +200,7 @@ public class FactureStructureExportService {
             CellStyle cellNumStyle = workbook.createCellStyle();
             cellNumStyle.setFont(bodyFont);
             cellNumStyle.setAlignment(HorizontalAlignment.RIGHT);
-            cellNumStyle.setVerticalAlignment(VerticalAlignment.TOP);
+            cellNumStyle.setVerticalAlignment(VerticalAlignment.CENTER);
             cellNumStyle.setDataFormat(workbook.createDataFormat().getFormat("#,##0"));
             setCellBorders(cellNumStyle);
 

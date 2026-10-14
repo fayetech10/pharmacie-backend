@@ -65,7 +65,10 @@ spring:
         - id: factures-structure-coeur
           uri: ${SERVICES_COEUR_URL:http://localhost:8090}
           predicates:
-            - Path=/api/factures-structure/rechercher-lettre,/api/factures-structure/brouillons,/api/factures-structure/export-groupe/**,/api/factures-structure/*/export/excel,/api/factures-structure/*/export/word,/api/factures-structure/*/export/enfants-pdf
+            # export/pdf aussi (14/10/2026) : sans lui, le bouton « PDF » partait au microservice
+            # (facture récapitulative, patient répété sur chaque prestation) au lieu du PDF du
+            # cœur, aligné sur l'Excel (une cellule par prestation, patient fusionné sur le bloc).
+            - Path=/api/factures-structure/rechercher-lettre,/api/factures-structure/brouillons,/api/factures-structure/export-groupe/**,/api/factures-structure/*/export/excel,/api/factures-structure/*/export/word,/api/factures-structure/*/export/pdf,/api/factures-structure/*/export/enfants-pdf
 
         # ---- Poste de santé : facturation, bénéficiaires, Hors CSU ----
         - id: poste-sante
