@@ -52,6 +52,7 @@ import static org.mockito.Mockito.when;
 class ImportPrestationsTest {
 
     private static final String CENTRE = "CS-1";
+    // Ancien modèle, avec la colonne « Diagnostic » retirée depuis : elle doit être ignorée.
     private static final String ENTETE_SESAME = "N°;N° CNI;Date de prise en charge;Prénom(s);Nom;Service;Diagnostic;"
             + "Prestation;Code acte;Quantité;Prix unitaire (FCFA);Montant (FCFA)";
 
@@ -134,7 +135,6 @@ class ImportPrestationsTest {
         List<LigneFactureStructure> d1 = lignes.getValue().get("D1");
         assertEquals(2, d1.size());
         assertEquals("Consultation", d1.get(0).getDesignation());
-        assertEquals("Paludisme", d1.get(0).getDiagnostique());
         assertEquals(2, d1.get(1).getQuantite());
         assertEquals(1500, d1.get(1).getPrixUnitaire());
         assertEquals("Médecine", d1.get(1).getService(), "la ligne de suite hérite du service de la visite");

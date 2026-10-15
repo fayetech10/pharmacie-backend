@@ -306,7 +306,6 @@ public class FactureStructureService {
             ligne.setPatientNumeroCni(request.getPatientNumeroCni());
             
             ligne.setService(request.getService());
-            ligne.setDiagnostique(request.getDiagnostique());
             ligne.setNumeroRegistre(request.getNumeroRegistre());
             ligne.setIrcIra(request.getIrcIra());
             ligne.setIndicationCbt(request.getIndicationCbt());
@@ -432,7 +431,6 @@ public class FactureStructureService {
             entity.setPatientMatricule(request.getPatientMatricule());
             entity.setPatientNumeroCni(request.getPatientNumeroCni());
             entity.setService(request.getService());
-            entity.setDiagnostique(request.getDiagnostique());
             entity.setNumeroRegistre(request.getNumeroRegistre());
             entity.setIrcIra(request.getIrcIra());
             entity.setIndicationCbt(request.getIndicationCbt());

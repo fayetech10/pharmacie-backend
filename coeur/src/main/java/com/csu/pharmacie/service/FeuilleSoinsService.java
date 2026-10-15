@@ -174,7 +174,6 @@ public class FeuilleSoinsService {
                 .codeAssure(request.getCodeAssure())
                 .sexe(request.getSexe())
                 .age(request.getAge())
-                .diagnostic(request.getDiagnostic())
                 .accompagnantPrenomNom(request.getAccompagnantPrenomNom());
 
         // Rattachement facultatif à une lettre de garantie existante.
@@ -244,9 +243,6 @@ public class FeuilleSoinsService {
         feuille.setMontantTotal(prestations.stream().mapToDouble(PrestationSoins::getMontant).sum());
         feuille.setMontantTotalAssure(prestations.stream().mapToDouble(PrestationSoins::getPartAssure).sum());
         feuille.setMontantTotalAssureur(prestations.stream().mapToDouble(PrestationSoins::getPartAssureur).sum());
-        if (request.getDiagnostic() != null && !request.getDiagnostic().isBlank()) {
-            feuille.setDiagnostic(request.getDiagnostic());
-        }
         feuille.setStatut(StatutFeuilleSoins.DEPOSEE_STRUCTURE);
         feuille.setUpdatedAt(LocalDateTime.now());
 
@@ -313,10 +309,6 @@ public class FeuilleSoinsService {
                         total += l.getMontant();
                         totalAssure += l.getMontantBeneficiaire();
                         totalAssureur += l.getMontantSencsu();
-
-                        if (feuille.getDiagnostic() == null || feuille.getDiagnostic().isBlank()) {
-                            feuille.setDiagnostic(l.getIndicationCbt() != null ? l.getIndicationCbt() : "Soins Structure");
-                        }
                     }
                 }
 

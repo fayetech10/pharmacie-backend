@@ -17,9 +17,6 @@ import java.util.List;
 @Data
 public class PriseEnChargeFeuilleRequest {
 
-    /** Complément éventuel du diagnostic posé par la structure. */
-    private String diagnostic;
-
     @NotEmpty(message = "Au moins une prestation est requise")
     @Valid
     private List<PrestationSoinsDto> prestations;

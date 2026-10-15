@@ -598,7 +598,6 @@ public class LettreGarantieService {
                     .sexe(lettre.getPatientSexe())
                     .age(agePatient)
                     .accompagnantPrenomNom(lettre.getAccompagnantNom())
-                    .diagnostic("Consultation / Soins")
                     .lettreGarantieId(lettre.getId())
                     .lettreGarantieNumero(lettre.getNumero())
                     .statut(com.csu.pharmacie.entity.StatutFeuilleSoins.EMISE)

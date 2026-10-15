@@ -1654,9 +1654,9 @@ public class ExportService {
             pNom.setSpacingAfter(8f);
             document.add(pNom);
 
-            PdfPTable identLine = new PdfPTable(3);
+            PdfPTable identLine = new PdfPTable(2);
             identLine.setWidthPercentage(100);
-            identLine.setWidths(new float[]{3.4f, 2.6f, 4f});
+            identLine.setWidths(new float[]{3.4f, 6.6f});
             identLine.getDefaultCell().setBorder(PdfPCell.NO_BORDER);
             PdfPCell sexeCell = new PdfPCell(); sexeCell.setBorder(PdfPCell.NO_BORDER);
             boolean masculin = "M".equalsIgnoreCase(feuille.getSexe()) || "H".equalsIgnoreCase(feuille.getSexe());
@@ -1666,9 +1666,6 @@ public class ExportService {
             PdfPCell ageCell = new PdfPCell(); ageCell.setBorder(PdfPCell.NO_BORDER);
             addMetaLine(ageCell, "AGE : ", feuille.getAge() != null ? feuille.getAge() + " ans" : "......................", labelFont, valFont);
             identLine.addCell(ageCell);
-            PdfPCell diagCell = new PdfPCell(); diagCell.setBorder(PdfPCell.NO_BORDER);
-            addMetaLine(diagCell, "Diagnostic : ", feuille.getDiagnostic() != null ? feuille.getDiagnostic() : "............................................", labelFont, valFont);
-            identLine.addCell(diagCell);
             document.add(identLine);
 
             // 6. Accompagnant.

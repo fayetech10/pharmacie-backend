@@ -30,6 +30,5 @@ public class FeuilleSoinsRequest {
     /** M ou F (cases du formulaire papier). */
     private String sexe;
     private Integer age;
-    private String diagnostic;
     private String accompagnantPrenomNom;
 }

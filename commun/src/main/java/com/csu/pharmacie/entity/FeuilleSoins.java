@@ -66,7 +66,6 @@ public class FeuilleSoins {
     /** Sexe M/F (cases à cocher du formulaire). */
     private String sexe;
     private Integer age;
-    private String diagnostic;
 
     // ---- Accompagnant ----
     private String accompagnantPrenomNom;

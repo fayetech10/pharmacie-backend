@@ -198,9 +198,9 @@ public class GenerateurPdfEnfantsDistrict {
 
             String[] entetes = {"N°", "N° dans le registre", "Prénom(s)", "Nom", "Date de naissance", "Sexe (M/F)",
                     "Adresse", "N° Matricule / Extrait naissance", "N° CNI accompagnant père/mère", "N° Téléphone",
-                    "Date de prise en charge", "Service", "Prestations et médicaments", "Diagnostic / Motif de consultation"};
+                    "Date de prise en charge", "Service", "Prestations et médicaments"};
             PdfPTable table = new PdfPTable(new float[]{2.2f, 3.2f, 5.5f, 4.8f, 4.3f, 2.6f, 4.8f, 5.6f, 5.2f, 4.3f,
-                    4.4f, 4.6f, 7.5f, 7f});
+                    4.4f, 4.6f, 9f});
             table.setWidthPercentage(100);
             table.setHeaderRows(1);
             for (String e : entetes) {
@@ -292,8 +292,8 @@ public class GenerateurPdfEnfantsDistrict {
     // ────────────────────────────── liste : une ligne ──────────────────────────────
 
     /**
-     * Colonnes « prestation » de la liste (hors N°) : l'identité une fois par visite, la date, le
-     * service et le diagnostic communs, et les prestations réunies (une par ligne de la cellule).
+     * Colonnes « prestation » de la liste (hors N°) : l'identité une fois par visite, la date et
+     * le service communs, et les prestations réunies (une par ligne de la cellule).
      */
     private static final List<ColonnesFactureStructure.Colonne> COLONNES_LISTE = List.of(
             ColonnesFactureStructure.Colonne.identite("N° dans le registre", LigneFactureStructure::getNumeroRegistre),
@@ -307,11 +307,10 @@ public class GenerateurPdfEnfantsDistrict {
             ColonnesFactureStructure.Colonne.identite("N° Téléphone", LigneFactureStructure::getPatientTelephone),
             new ColonnesFactureStructure.Colonne("Date de prise en charge", ColonnesFactureStructure::datePriseEnCharge),
             new ColonnesFactureStructure.Colonne("Service", LigneFactureStructure::getService),
-            ColonnesFactureStructure.Colonne.liste("Prestations et médicaments", LigneFactureStructure::getDesignation),
-            new ColonnesFactureStructure.Colonne("Diagnostic / Motif de consultation", LigneFactureStructure::getDiagnostique));
+            ColonnesFactureStructure.Colonne.liste("Prestations et médicaments", LigneFactureStructure::getDesignation));
     private static final int[] ALIGN_LISTE = {Element.ALIGN_CENTER, Element.ALIGN_LEFT, Element.ALIGN_LEFT,
             Element.ALIGN_CENTER, Element.ALIGN_CENTER, Element.ALIGN_LEFT, Element.ALIGN_LEFT, Element.ALIGN_LEFT,
-            Element.ALIGN_LEFT, Element.ALIGN_CENTER, Element.ALIGN_LEFT, Element.ALIGN_LEFT, Element.ALIGN_LEFT};
+            Element.ALIGN_LEFT, Element.ALIGN_CENTER, Element.ALIGN_LEFT, Element.ALIGN_LEFT};
 
     /**
      * Une visite : une ligne par prestation (cellules séparées) ; le N° et l'identité de l'enfant

@@ -30,6 +30,9 @@ public class GestionnaireErreurs {
 
     private static final Logger log = LoggerFactory.getLogger(GestionnaireErreurs.class);
 
+    /** Code d'erreur d'un conflit de version : rien n'a été écrit, la requête peut être rejouée. */
+    public static final String CONFLIT_VERSION = "CONFLIT_VERSION";
+
     @ExceptionHandler(ExceptionMetier.class)
     public ResponseEntity<Map<String, Object>> metier(ExceptionMetier e) {
         return reponse(e.getStatut(), e.getMessage());
@@ -53,11 +56,16 @@ public class GestionnaireErreurs {
      * Facture modifiée entre la lecture et l'écriture (verrou optimiste) — typiquement le
      * BCSU (cœur) qui y place un patient pendant que la structure la complète. Rien n'a été
      * écrit : il suffit de recommencer.
+     *
+     * <p>Le {@code code} le distingue des autres 409 (facture déjà transmise…) : la
+     * synchronisation hors ligne renvoie alors la saisie plus tard, telle quelle.</p>
      */
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ResponseEntity<Map<String, Object>> conflitDeVersion(ObjectOptimisticLockingFailureException e) {
-        return reponse(HttpStatus.CONFLICT, "La facture vient d'être modifiée par un autre utilisateur. "
-                + "Rien n'a été enregistré : rechargez puis recommencez.");
+        ResponseEntity<Map<String, Object>> conflit = reponse(HttpStatus.CONFLICT,
+                "La facture vient d'être modifiée par un autre utilisateur. Rien n'a été enregistré : rechargez puis recommencez.");
+        conflit.getBody().put("code", CONFLIT_VERSION);
+        return conflit;
     }
 
     @ExceptionHandler(AccessDeniedException.class)

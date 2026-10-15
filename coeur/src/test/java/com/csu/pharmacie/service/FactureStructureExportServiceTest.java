@@ -169,6 +169,7 @@ class FactureStructureExportServiceTest {
                 "un enfant à trois prestations est un seul patient : " + contenu);
         assertTrue(contenu.contains("3 prestations"), "les trois prestations restent comptées : " + contenu);
         assertFalse(contenu.contains("3 patients"), "il ne doit pas compter trois patients : " + contenu);
+        assertFalse(contenu.contains("Diagnostic"), "le diagnostic est retiré de l'application : " + contenu);
     }
 
     @Test
@@ -250,7 +251,7 @@ class FactureStructureExportServiceTest {
         assertNotNull(listeEtFacture);
         assertTrue(listeEtFacture.length > 0, "PDF Liste + Facture vide");
 
-        // Hors 0-5 ans, les colonnes du modèle enfants (registre, adresse, accompagnant, diagnostic)
+        // Hors 0-5 ans, les colonnes du modèle enfants (registre, adresse, accompagnant)
         // sont retirées de la liste « Liste + Facture ».
         com.itextpdf.text.pdf.PdfReader reader = new com.itextpdf.text.pdf.PdfReader(listeEtFacture);
         StringBuilder txt = new StringBuilder();

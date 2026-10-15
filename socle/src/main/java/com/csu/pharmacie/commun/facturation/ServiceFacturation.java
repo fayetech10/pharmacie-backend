@@ -370,18 +370,26 @@ public class ServiceFacturation {
      *
      * <p>C'est ainsi que l'écran de facturation travaille : on saisit un patient à la fois
      * et la facture mensuelle s'accumule, au rythme du terrain.</p>
+     *
+     * <p>Une saisie envoyée plusieurs fois au même instant n'est comptée qu'une fois : ses
+     * envois passent un à un (cf. {@link DepotFactureStructure#verrouiller}), et les suivants
+     * trouvent sa clé au lieu de créer un second dossier.</p>
      */
     @Transactional
     public FactureStructure ajouterPatient(RequeteFacturation requete) {
         UtilisateurAuthentifie utilisateur = ContexteUtilisateur.courant();
         String structureId = ContexteUtilisateur.structureCourante();
 
-        // Saisie hors ligne renvoyée : si elle est déjà arrivée (réponse perdue en route), on
-        // renvoie la facture qui l'a reçue, sans rien y ajouter — avant tout contrôle, et quel
-        // que soit le mois (elle a pu être reportée sur le mois suivant entre-temps).
+        // Saisie hors ligne renvoyée : si elle est déjà arrivée (réponse perdue en route, ou
+        // envoi en double), on renvoie la facture qui l'a reçue, sans rien y ajouter — avant
+        // tout contrôle, et quel que soit le mois (elle a pu être reportée entre-temps).
         String cle = requete.getCleSynchronisation() == null || requete.getCleSynchronisation().isBlank()
                 ? null : requete.getCleSynchronisation().trim();
         if (cle != null) {
+            // Avant toute lecture des factures : un envoi simultané de la même saisie attend ici
+            // que le premier soit enregistré, puis le trouve. Seuls les envois d'une même saisie
+            // s'attendent — pas les autres patients de la structure.
+            depot.verrouiller("saisie:" + structureId + ":" + cle);
             Optional<FactureStructure> dejaRecue = factureAyantRecu(structureId, cle);
             if (dejaRecue.isPresent()) {
                 return dejaRecue.get();
@@ -517,8 +525,8 @@ public class ServiceFacturation {
 
     /**
      * Ajoute les prestations saisies au dossier que le BCSU a créé pour cette lettre. L'identité
-     * reste celle du dossier (la lettre fait foi) ; le diagnostic, le n° de registre et l'adresse
-     * saisis par la structure le complètent.
+     * reste celle du dossier (la lettre fait foi) ; le n° de registre et l'adresse saisis par la
+     * structure le complètent.
      */
     private FactureStructure completerDossierBcsu(FactureStructure facture, LettreGarantie lettre,
                                                   RequeteFacturation requete, UtilisateurAuthentifie utilisateur,
@@ -535,9 +543,6 @@ public class ServiceFacturation {
         DossierPatient dossier = dossierDe(facture, lettre.getDossierId());
 
         DossierPatient saisi = requete.versDossier();
-        if (saisi.getDiagnostic() != null) {
-            dossier.setDiagnostic(saisi.getDiagnostic());
-        }
         if (saisi.getNumeroRegistre() != null) {
             dossier.setNumeroRegistre(saisi.getNumeroRegistre());
         }
@@ -635,8 +640,6 @@ public class ServiceFacturation {
                 facture.getLignes().addAll(position, nouvelles);
             }
 
-            nouvelles.stream().map(LigneFactureStructure::getDiagnostique).filter(Objects::nonNull)
-                    .filter(d -> !d.isBlank()).findFirst().ifPresent(dossier::setDiagnostic);
             nouvelles.stream().map(LigneFactureStructure::getNumeroRegistre).filter(Objects::nonNull)
                     .filter(n -> !n.isBlank()).findFirst().ifPresent(dossier::setNumeroRegistre);
             dossier.setStatut(statutDossier(facture.getRegime(), dossier, lignesDu(facture, dossier.getId()).size(), false));
@@ -881,8 +884,6 @@ public class ServiceFacturation {
                 dossier::setAdresse);
         changer(traces, facture, utilisateur, dossier, "N° registre", dossier.getNumeroRegistre(),
                 saisi.getNumeroRegistre(), dossier::setNumeroRegistre);
-        changer(traces, facture, utilisateur, dossier, "Diagnostic", dossier.getDiagnostic(), saisi.getDiagnostic(),
-                dossier::setDiagnostic);
         exigerIdentite(dossier);
 
         // ----- Pièces -----
@@ -1164,7 +1165,6 @@ public class ServiceFacturation {
                         .matricule(ligne.getPatientMatricule())
                         .numeroCni(ligne.getPatientNumeroCni())
                         .numeroRegistre(ligne.getNumeroRegistre())
-                        .diagnostic(ligne.getDiagnostique())
                         .verificationCarte(ligne.getVerificationCarte())
                         .lettreGarantieNumero(ligne.getLettreGarantieNumero())
                         .identiteVerrouillee(VerificationCarte.VERIFIEE.equals(ligne.getVerificationCarte())
@@ -1413,6 +1413,14 @@ public class ServiceFacturation {
         if (existante.isPresent()) {
             return existante.get();
         }
+        // Première saisie du mois pour ce régime. Deux saisies simultanées créeraient chacune
+        // leur facture — et toutes les suivantes échoueraient, deux factures répondant au même
+        // mois. La seconde attend la première, puis la trouve.
+        depot.verrouiller("facture:" + structureId + ":" + regime + ":" + annee + "-" + mois);
+        existante = depot.findByStructureSanitaireIdAndRegimeAndMoisAndAnnee(structureId, regime, mois, annee);
+        if (existante.isPresent()) {
+            return existante.get();
+        }
 
         FactureStructure facture = new FactureStructure();
         facture.setRegime(regime);
@@ -1504,14 +1512,6 @@ public class ServiceFacturation {
                     lignes.stream().mapToDouble(LigneFactureStructure::getMontantBeneficiaire).sum());
             feuille.setMontantTotalAssureur(
                     lignes.stream().mapToDouble(LigneFactureStructure::getMontantSencsu).sum());
-
-            if (feuille.getDiagnostic() == null || feuille.getDiagnostic().isBlank()) {
-                feuille.setDiagnostic(lignes.stream()
-                        .map(LigneFactureStructure::getIndicationCbt)
-                        .filter(Objects::nonNull)
-                        .findFirst()
-                        .orElse("Soins Structure"));
-            }
             feuille.setFactureStructureId(facture.getId());
             feuille.setFactureStructureNumero(facture.getNumero());
             feuille.setUpdatedAt(LocalDateTime.now());

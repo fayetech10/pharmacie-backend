@@ -100,7 +100,6 @@ public class ServiceImportPrestations {
         NAISSANCE("Date de naissance", "Né le", "Née le"),
         REGISTRE("N° dans le registre", "N° registre", "N° de registre"),
         SERVICE("Service"),
-        DIAGNOSTIC("Diagnostic", "Diagnostique", "Diagnostic / Motif de consultation", "Motif de consultation"),
         INDICATION("Indication / Motif de CBT", "Indication", "Motif de CBT"),
         REGISTRE_BLOC("N° registre bloc opératoire", "N° registre bloc"),
         DATE_INTERVENTION("Date et heure de l'intervention", "Date et heure intervention", "Date intervention"),
@@ -150,7 +149,7 @@ public class ServiceImportPrestations {
         if (regime == Regime.ZERO_CINQ_ANS) {
             colonnes.addAll(List.of(Colonne.EXTRAIT, Colonne.NAISSANCE, Colonne.REGISTRE));
         }
-        colonnes.addAll(List.of(Colonne.SERVICE, Colonne.DIAGNOSTIC));
+        colonnes.add(Colonne.SERVICE);
         if (regime == Regime.CESARIENNE) {
             colonnes.addAll(List.of(Colonne.INDICATION, Colonne.REGISTRE_BLOC, Colonne.DATE_INTERVENTION, Colonne.DUREE));
         }
@@ -255,7 +254,6 @@ public class ServiceImportPrestations {
         LocalDate naissance;
         String registre;
         String service;
-        String diagnostic;
         String indication;
         String registreBloc;
         String dateIntervention;
@@ -288,7 +286,6 @@ public class ServiceImportPrestations {
             naissance = naissance != null ? naissance : visite.naissance;
             registre = registre != null ? registre : visite.registre;
             service = service != null ? service : visite.service;
-            diagnostic = diagnostic != null ? diagnostic : visite.diagnostic;
             indication = indication != null ? indication : visite.indication;
             registreBloc = registreBloc != null ? registreBloc : visite.registreBloc;
             dateIntervention = dateIntervention != null ? dateIntervention : visite.dateIntervention;
@@ -512,7 +509,6 @@ public class ServiceImportPrestations {
         lue.extrait = ligne.texte(Colonne.EXTRAIT.intitules);
         lue.registre = ligne.texte(Colonne.REGISTRE.intitules);
         lue.service = ligne.texte(Colonne.SERVICE.intitules);
-        lue.diagnostic = ligne.texte(Colonne.DIAGNOSTIC.intitules);
         lue.indication = ligne.texte(Colonne.INDICATION.intitules);
         lue.registreBloc = ligne.texte(Colonne.REGISTRE_BLOC.intitules);
         lue.dateIntervention = ligne.texte(Colonne.DATE_INTERVENTION.intitules);
@@ -597,7 +593,6 @@ public class ServiceImportPrestations {
                 .quantite(lue.quantite)
                 .prixUnitaire(lue.prix == null ? 0 : lue.prix)
                 .service(lue.service)
-                .diagnostique(lue.diagnostic)
                 .numeroRegistre(enfant ? lue.registre : null)
                 .indicationCbt(cesarienne ? lue.indication : null)
                 .numeroRegistreBloc(cesarienne ? lue.registreBloc : null)
@@ -741,8 +736,6 @@ public class ServiceImportPrestations {
                 case REGISTRE -> texte(cellule, ligne != null && ligne.getNumeroRegistre() != null
                         ? ligne.getNumeroRegistre() : dossier == null ? null : dossier.getNumeroRegistre());
                 case SERVICE -> texte(cellule, ligne == null ? null : ligne.getService());
-                case DIAGNOSTIC -> texte(cellule, ligne != null && ligne.getDiagnostique() != null
-                        ? ligne.getDiagnostique() : dossier == null ? null : dossier.getDiagnostic());
                 case INDICATION -> texte(cellule, ligne == null ? null : ligne.getIndicationCbt());
                 case REGISTRE_BLOC -> texte(cellule, ligne == null ? null : ligne.getNumeroRegistreBloc());
                 case DATE_INTERVENTION -> texte(cellule, ligne == null ? null : ligne.getDateHeureIntervention());

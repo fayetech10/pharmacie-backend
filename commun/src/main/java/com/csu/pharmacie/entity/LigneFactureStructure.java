@@ -74,7 +74,6 @@ public class LigneFactureStructure {
 
     // Champs spécifiques par catégorie (classeur CS_EPS) par ligne
     private String service;                    // Service hospitalier
-    private String diagnostique;               // Diagnostique médical
     private String numeroRegistre;             // Enfants 0-5 ans
     private String ircIra;                     // Dialyses : IRC / IRA
     private String indicationCbt;              // Césarienne

@@ -31,7 +31,7 @@ public final class ColonnesFactureStructure {
      * Comment une colonne réunit les prestations d'une visite sur sa ligne du document :
      * <ul>
      *   <li>{@code IDENTITE} — le patient : la première valeur renseignée ;</li>
-     *   <li>{@code COMMUN} — date, service, diagnostic… : une seule fois si toutes les
+     *   <li>{@code COMMUN} — date, service… : une seule fois si toutes les
      *       prestations ont la même, sinon une par prestation, à la ligne dans la cellule ;</li>
      *   <li>{@code LISTE} — prestation, quantité, prix : une par prestation, à la ligne, dans
      *       le même ordre d'une colonne à l'autre ;</li>
@@ -313,7 +313,6 @@ public final class ColonnesFactureStructure {
         c.add(new Colonne("Date de prise en Charge", ColonnesFactureStructure::datePriseEnCharge));
         c.add(new Colonne("Service", LigneFactureStructure::getService));
         c.add(Colonne.liste("Prestations et médicaments", LigneFactureStructure::getDesignation));
-        c.add(new Colonne("Diagnostic / Motif de consultation", LigneFactureStructure::getDiagnostique));
         // Le forfait ne porte que sur une prestation de la visite (les autres sont à 0).
         c.add(new Colonne("Forfait", LigneFactureStructure::getPrixUnitaire, false, Agregat.MAX));
         c.add(new Colonne("Montant Total", LigneFactureStructure::getMontant, true));

@@ -57,7 +57,6 @@ public class RequeteFacturation {
 
     // ----- Contexte médical -----
     private String service;
-    private String diagnostique;
 
     // ----- Champs propres à certains régimes -----
     private String numeroRegistre;
@@ -112,7 +111,6 @@ public class RequeteFacturation {
                 .numeroCni(nettoyer(patientNumeroCni))
                 .numeroRegistre(nettoyer(numeroRegistre))
                 .verificationCarte(VerificationCarte.normaliser(verificationCarte))
-                .diagnostic(nettoyer(diagnostique))
                 .pieces(new ArrayList<>())
                 .build();
     }
@@ -132,7 +130,6 @@ public class RequeteFacturation {
         patientNumeroCni = dossier.getNumeroCni();
         numeroRegistre = dossier.getNumeroRegistre();
         verificationCarte = dossier.getVerificationCarte();
-        diagnostique = dossier.getDiagnostic();
     }
 
     private static String nettoyer(String valeur) {
@@ -167,9 +164,6 @@ public class RequeteFacturation {
             ligne.setFeuilleSoinsNumero(feuilleSoinsNumero);
             if (ligne.getService() == null) {
                 ligne.setService(service);
-            }
-            if (ligne.getDiagnostique() == null) {
-                ligne.setDiagnostique(diagnostique);
             }
             if (ligne.getNumeroRegistre() == null) {
                 ligne.setNumeroRegistre(numeroRegistre);

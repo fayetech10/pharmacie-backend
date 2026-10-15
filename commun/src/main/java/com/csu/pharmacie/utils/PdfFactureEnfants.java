@@ -371,11 +371,11 @@ public final class PdfFactureEnfants {
         document.add(ref);
 
         // Une ligne par visite : identité une fois, prestations réunies (à la ligne dans la
-        // cellule), date / service / diagnostic une fois s'ils sont communs à la visite. Hors
+        // cellule), date / service une fois s'ils sont communs à la visite. Hors
         // « Enfants de moins de 5 ans » (forfait), la liste porte le détail chiffré par prestation :
         // prix unitaire, quantité et montant facturé à la SEN-CSU (empilés comme les désignations).
         boolean avecMontants = facture.getRegime() != Regime.ZERO_CINQ_ANS;
-        // Les colonnes N° registre / Adresse / N° CNI accompagnant / Diagnostic sont propres au
+        // Les colonnes N° registre / Adresse / N° CNI accompagnant sont propres au
         // modèle officiel « Enfants de moins de 5 ans » ; elles sont retirées des autres régimes
         // (ex. classique), comme dans la facture.
         boolean enfants = facture.getRegime() == Regime.ZERO_CINQ_ANS;
@@ -405,9 +405,6 @@ public final class PdfFactureEnfants {
             ajouterColonne(colonnes, aligns, larg, Colonne.liste("Prix unitaire", LigneFactureStructure::getPrixUnitaire), Element.ALIGN_RIGHT, 3.3f);
             ajouterColonne(colonnes, aligns, larg, Colonne.liste("Quantité", LigneFactureStructure::getQuantite), Element.ALIGN_CENTER, 2.2f);
             ajouterColonne(colonnes, aligns, larg, Colonne.liste("Montant facturé SEN-CSU", LigneFactureStructure::getMontantSencsu), Element.ALIGN_RIGHT, 4f);
-        }
-        if (enfants) {
-            ajouterColonne(colonnes, aligns, larg, new Colonne("Diagnostic / Motif de consultation", LigneFactureStructure::getDiagnostique), Element.ALIGN_LEFT, 7f);
         }
         int[] alignements = aligns.stream().mapToInt(Integer::intValue).toArray();
         float[] largeurs = new float[larg.size()];

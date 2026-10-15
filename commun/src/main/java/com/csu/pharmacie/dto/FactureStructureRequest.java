@@ -26,8 +26,6 @@ public class FactureStructureRequest {
 
     /** Service hospitalier (ex : Cardiologie, Maternité, Urgences). */
     private String service;
-    /** Diagnostique médical. */
-    private String diagnostique;
 
     // ---- Identité du bénéficiaire (classeur CS_EPS ; préremplie depuis la lettre si absente) ----
     private java.time.LocalDate patientDateNaissance;

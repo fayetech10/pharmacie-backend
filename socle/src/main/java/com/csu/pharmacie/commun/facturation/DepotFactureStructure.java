@@ -4,6 +4,8 @@ import com.csu.pharmacie.entity.FactureStructure;
 import com.csu.pharmacie.entity.Regime;
 import com.csu.pharmacie.entity.StatutFacture;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
@@ -41,4 +43,23 @@ public interface DepotFactureStructure extends JpaRepository<FactureStructure, S
     List<FactureStructure> findByRegionId(String regionId);
 
     List<FactureStructure> findByStatut(StatutFacture statut);
+
+    /**
+     * Verrou consultatif PostgreSQL sur un nom libre, tenu jusqu'à la fin de la transaction
+     * appelante : relâché seul au commit ou au rollback, et par la connexion fermée si le
+     * service tombe. Une seconde transaction qui demande le même nom attend la première.
+     *
+     * <p>Sert là où un contrôle « existe-t-il déjà ? » précède une création : sans lui, deux
+     * requêtes simultanées passent toutes deux le contrôle (aucune ne voit encore l'autre) et
+     * créent chacune — la même saisie hors ligne envoyée trois fois a ainsi donné trois
+     * dossiers. Après le verrou, en lecture validée (isolation par défaut de PostgreSQL), les
+     * requêtes suivantes voient ce que la transaction précédente a enregistré : il faut donc le
+     * prendre avant de lire ce qu'il protège.</p>
+     *
+     * <p>Le nom est réduit à un entier : deux noms qui se heurteraient ne feraient qu'attendre
+     * l'un l'autre, sans autre effet. Le 2001 isole ces verrous d'autres usages éventuels.</p>
+     */
+    @Query(value = "SELECT 1 FROM (SELECT pg_advisory_xact_lock(2001, hashtext(CAST(:nom AS text)))) AS verrou",
+            nativeQuery = true)
+    Integer verrouiller(@Param("nom") String nom);
 }

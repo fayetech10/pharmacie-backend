@@ -97,9 +97,6 @@ public class DossierPatient {
      */
     private String lettreGarantieId;
 
-    // ─── Informations médicales ───
-    private String diagnostic;
-
     /**
      * Pièces jointes au dossier, par type (cf. {@link PieceDossier}). Seul le type est
      * ici : les images vivent dans leur table, pour que la facture — relue à chaque

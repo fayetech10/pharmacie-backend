@@ -60,7 +60,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -105,7 +104,7 @@ public class ServiceImportFactures {
     enum Champ {
         // Patient et visite : repris d'une ligne à l'autre (cellules fusionnées ou laissées vides).
         REGISTRE, PRENOM, NOM, NAISSANCE, SEXE, TELEPHONE, ADRESSE, MATRICULE, CNI, IRC,
-        DATE_SOINS, SERVICE, DIAGNOSTIC, INDICATION, REGISTRE_BLOC, DATE_INTERVENTION, DUREE,
+        DATE_SOINS, SERVICE, INDICATION, REGISTRE_BLOC, DATE_INTERVENTION, DUREE,
         // Propres à chaque prestation.
         PRESTATION, QUANTITE, PRIX, MONTANT, FORFAIT;
 
@@ -116,8 +115,12 @@ public class ServiceImportFactures {
 
     /** Intitulés de colonnes reconnus (normalisés), ceux des modèles officiels en premier. */
     private static final Map<String, Champ> CHAMPS = new HashMap<>();
-    /** Colonnes connues mais sans donnée à reprendre (numéro d'ordre). */
-    private static final Set<String> SANS_DONNEE = Set.of("n", "no", "numero", "ndordre", "numerodordre", "ordre");
+    /**
+     * Colonnes connues mais sans donnée à reprendre : numéro d'ordre, et diagnostic (retiré de
+     * l'application le 15/10/2026, encore présent dans les factures exportées avant).
+     */
+    private static final Set<String> SANS_DONNEE = Set.of("n", "no", "numero", "ndordre", "numerodordre", "ordre",
+            "diagnosticmotifdeconsultation", "diagnostic", "diagnostique", "motifdeconsultation");
 
     static {
         champ(Champ.REGISTRE, "N° dans le registre", "N° registre", "Numéro registre", "N° de registre");
@@ -135,8 +138,6 @@ public class ServiceImportFactures {
         champ(Champ.IRC, "IRC/IRA");
         champ(Champ.DATE_SOINS, "Date de prise en charge", "Date des soins", "Date de soins", "Date de consultation");
         champ(Champ.SERVICE, "Service");
-        champ(Champ.DIAGNOSTIC, "Diagnostic / Motif de consultation", "Diagnostic", "Diagnostique",
-                "Motif de consultation");
         champ(Champ.INDICATION, "Indication / Motif de CBT", "Indication", "Motif de CBT");
         champ(Champ.REGISTRE_BLOC, "N° Registre Bloc opératoire", "N° registre bloc");
         champ(Champ.DATE_INTERVENTION, "Date et Heure Intervention", "Date intervention");
@@ -566,7 +567,6 @@ public class ServiceImportFactures {
                     .datePriseEnCharge(soins)
                     .quantite(quantite)
                     .prixUnitaire(prix)
-                    .diagnostique(l.get(Champ.DIAGNOSTIC))
                     .numeroRegistre(l.get(Champ.REGISTRE))
                     .ircIra(l.get(Champ.IRC))
                     .indicationCbt(l.get(Champ.INDICATION))
@@ -729,8 +729,6 @@ public class ServiceImportFactures {
                     .matricule(patient.getPatientMatricule())
                     .numeroCni(patient.getPatientNumeroCni())
                     .numeroRegistre(patient.getNumeroRegistre())
-                    .diagnostic(visite.stream().map(p -> p.ligne().getDiagnostique())
-                            .filter(Objects::nonNull).findFirst().orElse(null))
                     .identiteVerrouillee(false)
                     .createdAt(maintenant)
                     .updatedAt(maintenant)

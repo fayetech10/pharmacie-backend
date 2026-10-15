@@ -208,7 +208,9 @@ class ImportFacturesTest {
 
     @Test
     void enfantsLigneDeSuiteSansIdentiteEtForfaitParVisite() throws Exception {
-        List<String> e = entetes(Regime.ZERO_CINQ_ANS);
+        // Facture exportée avant le retrait du diagnostic (15/10/2026) : la colonne est ignorée sans avertissement.
+        List<String> e = new java.util.ArrayList<>(entetes(Regime.ZERO_CINQ_ANS));
+        e.add(e.indexOf("Prestations et médicaments") + 1, "Diagnostic / Motif de consultation");
         try (Workbook wb = new XSSFWorkbook()) {
             feuille(wb, "Enfants 0-5 ans", Regime.ZERO_CINQ_ANS, e, null,
                     ligne(e, "N° dans le registre", "12", "Prénom(s)", "Moussa", "Nom", "FALL",
@@ -229,13 +231,14 @@ class ImportFacturesTest {
                     cible(Regime.ZERO_CINQ_ANS, StatutFacture.VALIDEE_SR), false);
 
             assertTrue(r.getErreurs().isEmpty(), () -> "erreurs : " + r.getErreurs());
+            assertTrue(r.getAvertissements().stream().noneMatch(a -> a.contains("Diagnostic")),
+                    () -> "avertissements : " + r.getAvertissements());
             FactureStructure f = enregistrees.get(0);
             assertEquals(3, f.getLignes().size());
             assertEquals(2, f.getDossiers().size());
             assertEquals(f.getLignes().get(0).getDossierId(), f.getLignes().get(1).getDossierId(),
                     "la ligne sans identité prolonge la visite du dessus");
             DossierPatient moussa = f.getDossiers().get(0);
-            assertEquals("Fièvre", moussa.getDiagnostic());
             assertEquals("Keur Mbaye", moussa.getAdresse());
             assertEquals("12", moussa.getNumeroRegistre());
             assertEquals("EXT-145", moussa.getMatricule());
