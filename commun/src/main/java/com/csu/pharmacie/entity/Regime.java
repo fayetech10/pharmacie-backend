@@ -109,6 +109,30 @@ public enum Regime {
         return estContributif() || this == BSF || this == CEC || this == BSF_CEC;
     }
 
+    /**
+     * La catégorie imprimée sur une carte CSU relève-t-elle de ce régime ? Une carte classique
+     * (ou Ndongo Daara, élèves) ne s'emploie pas sur BSF / CEC, ni l'inverse ; une carte Sésame
+     * seulement sur le Plan Sésame (refus depuis le 19/10/2026). {@code null} quand la catégorie
+     * n'est pas reconnue : rien à opposer. Miroir de {@code categorieCompatible} côté écran.
+     */
+    public Boolean compatibleAvecCarte(String categorie) {
+        String c = java.text.Normalizer.normalize(categorie == null ? "" : categorie, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toUpperCase(java.util.Locale.ROOT);
+        java.util.Set<Regime> attendus;
+        if (c.contains("CLASSIQUE") || c.contains("CONTRIBUTIF") || c.contains("NDONGO") || c.contains("DAARA")
+                || c.contains("ELEVE")) {
+            attendus = java.util.EnumSet.of(CONTRIBUTIF, NDONGO_DARA, ELEVES);
+        } else if (c.contains("BSF") || c.contains("CEC")) {
+            attendus = java.util.EnumSet.of(BSF, CEC, BSF_CEC);
+        } else if (c.contains("SESAME")) {
+            attendus = java.util.EnumSet.of(SESAME);
+        } else {
+            return null;
+        }
+        return attendus.contains(this);
+    }
+
     /** Régimes encore proposés à la saisie (les régimes hérités sont exclus). */
     public static Regime[] regimesActifs() {
         return new Regime[]{CONTRIBUTIF, ZERO_CINQ_ANS, CESARIENNE, DIALYSE_PERITONEALE,

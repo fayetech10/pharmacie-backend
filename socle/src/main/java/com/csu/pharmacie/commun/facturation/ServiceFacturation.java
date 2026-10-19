@@ -1049,6 +1049,12 @@ public class ServiceFacturation {
             }
             throw ExceptionMetier.invalide(motif + " — La facturation ne peut pas être effectuée.");
         }
+        // Carte valide mais d'une autre catégorie que le régime (classique sur BSF / CEC, ou
+        // l'inverse) : refusée, comme à l'écran (19/10/2026 ; ce n'était qu'un avertissement).
+        if (Boolean.FALSE.equals(regime.compatibleAvecCarte(carte.categorie()))) {
+            throw ExceptionMetier.invalide("Carte de catégorie « " + carte.categorie() + " » : elle ne relève pas du régime « "
+                    + regime.getLibelle() + " » — La facturation ne peut pas être effectuée.");
+        }
 
         dossier.setMatricule(carte.codeImmatriculation());
         if (carte.nom() != null) {
