@@ -191,8 +191,12 @@ class FactureStructureExportServiceTest {
             List<Row> visites = lignesDuPatient(sheet, "Awa");
             assertEquals(2, visites.size(), "le patient n'est pas dupliqué : une entête de bloc par visite");
 
+            // Derniers enregistrés en tête (19/10/2026) : dossier-2, saisi après dossier-1, vient d'abord.
+            Row v2 = visites.get(0);
+            Row v1p1 = visites.get(1);
+
             List<String> entetes = new ArrayList<>();
-            Row ligneEntete = sheet.getRow(visites.get(0).getRowNum() - 1);
+            Row ligneEntete = sheet.getRow(v2.getRowNum() - 1);
             ligneEntete.forEach(c -> entetes.add(c.getStringCellValue()));
 
             assertFalse(entetes.contains("Adresse"), "l'adresse doit être enlevée du régime classique");
@@ -205,8 +209,13 @@ class FactureStructureExportServiceTest {
             int cPu = entetes.indexOf("P.U");
             int cMontant = entetes.indexOf("Montant Total");
 
+            // Visite 2 (dossier-2), en tête : une seule prestation, juste au-dessus de la visite 1.
+            assertEquals("Consultation", v2.getCell(cPrestation).getStringCellValue());
+            assertEquals(1000, v2.getCell(cPu).getNumericCellValue(), 0.001);
+            assertEquals(1000, v2.getCell(cMontant).getNumericCellValue(), 0.001);
+            assertEquals(v2.getRowNum() + 1, v1p1.getRowNum(), "la visite 1 suit directement la visite 2");
+
             // Visite 1 (dossier-1) : deux prestations, chacune dans sa PROPRE ligne/cellule.
-            Row v1p1 = visites.get(0);
             Row v1p2 = sheet.getRow(v1p1.getRowNum() + 1);
             assertEquals("Consultation", v1p1.getCell(cPrestation).getStringCellValue());
             assertEquals(1000, v1p1.getCell(cPu).getNumericCellValue(), 0.001);
@@ -225,14 +234,8 @@ class FactureStructureExportServiceTest {
                             && rg.getFirstRow() == v1p1.getRowNum() && rg.getLastRow() == v1p1.getRowNum() + 1),
                     "le prénom doit être fusionné sur les deux prestations de la visite");
 
-            // Visite 2 (dossier-2) : une seule prestation.
-            Row v2 = visites.get(1);
-            assertEquals("Consultation", v2.getCell(cPrestation).getStringCellValue());
-            assertEquals(1000, v2.getCell(cPu).getNumericCellValue(), 0.001);
-            assertEquals(1000, v2.getCell(cMontant).getNumericCellValue(), 0.001);
-
-            // Ligne des totaux : somme de toutes les prestations.
-            Row totaux = sheet.getRow(v2.getRowNum() + 1);
+            // Ligne des totaux, après le dernier bloc (visite 1) : somme de toutes les prestations.
+            Row totaux = sheet.getRow(v1p2.getRowNum() + 1);
             assertEquals("TOTAUX", totaux.getCell(0).getStringCellValue());
             assertEquals(2500, totaux.getCell(cMontant).getNumericCellValue(), 0.001);
         }

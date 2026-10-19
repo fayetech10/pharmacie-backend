@@ -5,6 +5,7 @@ import com.csu.pharmacie.entity.Regime;
 
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -105,13 +106,28 @@ public final class ColonnesFactureStructure {
     }
 
     /**
-     * Groupes de lignes pour l'export des documents : une ligne par visite pour tous les régimes
-     * (cf. {@link #parVisite}). Les prestations d'une même visite tiennent sur la ligne du patient,
-     * chacune à la ligne dans sa cellule — prestation, P.U et montant alignés — sans dupliquer
-     * l'identité du patient (une seule occurrence par visite, et non une ligne par prestation).
+     * Groupes de lignes pour l'export des documents de la facture (Excel, PDF, Word) : une
+     * ligne par visite pour tous les régimes. Les prestations d'une même visite tiennent sur la
+     * ligne du patient, chacune à la ligne dans sa cellule — prestation, P.U et montant alignés —
+     * sans dupliquer l'identité du patient (une seule occurrence par visite).
+     *
+     * <p>Les <b>derniers enregistrés en tête</b> (demande du 19/10/2026), comme la liste des
+     * patients à l'écran. L'ordre d'enregistrement est celui des lignes dans la facture : un
+     * patient ajouté va au bout, un patient modifié garde sa place. Les prestations d'une visite
+     * restent par date. Vaut aussi pour les feuilles « facture » de la consolidation district ;
+     * les listes PDF des 0-5 ans ({@link #parVisite}) restent chronologiques.</p>
      */
     public static List<List<LigneFactureStructure>> groupesPourRegime(Regime regime, List<LigneFactureStructure> lignes) {
-        return parVisite(lignes);
+        Map<String, List<LigneFactureStructure>> visites = new LinkedHashMap<>();
+        for (LigneFactureStructure ligne : lignes == null ? List.<LigneFactureStructure>of() : lignes) {
+            visites.computeIfAbsent(cleVisite(ligne), cle -> new ArrayList<>()).add(ligne);
+        }
+        List<List<LigneFactureStructure>> groupes = new ArrayList<>();
+        for (List<LigneFactureStructure> visite : visites.values()) {
+            groupes.add(parDate(visite));
+        }
+        Collections.reverse(groupes);
+        return groupes;
     }
 
     /**
