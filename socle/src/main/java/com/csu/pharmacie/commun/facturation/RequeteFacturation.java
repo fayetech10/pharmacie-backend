@@ -36,6 +36,13 @@ public class RequeteFacturation {
     private Integer mois;
     private Integer annee;
 
+    /**
+     * Date de prise en charge de la visite, choisie en tête de l'écran (le jour même par
+     * défaut). Gardée par le dossier et reprise par ses prestations sans date ; elle ne
+     * change plus quand le dossier est complété ensuite.
+     */
+    private LocalDate datePriseEnCharge;
+
     // ----- Bénéficiaire -----
     private String patientId;
     private String patientNom;
@@ -187,7 +194,7 @@ public class RequeteFacturation {
                 ligne.setDureeHospitalisationJours(dureeHospitalisationJours);
             }
             if (ligne.getDatePriseEnCharge() == null) {
-                ligne.setDatePriseEnCharge(LocalDate.now());
+                ligne.setDatePriseEnCharge(datePriseEnCharge != null ? datePriseEnCharge : LocalDate.now());
             }
             completees.add(ligne);
         }

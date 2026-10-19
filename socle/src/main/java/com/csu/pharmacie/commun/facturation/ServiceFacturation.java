@@ -464,6 +464,10 @@ public class ServiceFacturation {
         // dossier) vaut une fois par visite. Choix du 06/10/2026 — auparavant les visites du
         // mois étaient réunies dans un seul dossier, donc un seul forfait par mois.
         dossier.setId(UUID.randomUUID().toString());
+        // Date de la visite gardée par le dossier : un dossier enregistré sans prestation la
+        // retrouve quand on le complète, même le lendemain.
+        dossier.setDatePriseEnCharge(requete.getDatePriseEnCharge() != null ? requete.getDatePriseEnCharge()
+                : nouvelles.isEmpty() ? aujourdhui : nouvelles.get(0).getDatePriseEnCharge());
         dossier.setPieces(typesFournis(requete.getPieces()));
         if (photoCarte != null && !photoCarte.isBlank()) {
             // Déclarée avant l'enregistrement de la facture, qui porte la liste des pièces ;
@@ -905,6 +909,16 @@ public class ServiceFacturation {
                 requete.setFeuilleSoinsNumero(l.getFeuilleSoinsNumero());
             }
         });
+        // La date de prise en charge ne change plus une fois la visite saisie (demande du
+        // 19/10/2026) : les prestations ajoutées en complétant le dossier, même le lendemain,
+        // portent la sienne. Les dossiers du BCSU (lettre de garantie) gardent leur circuit.
+        LocalDate dateVisite = dossier.getLettreGarantieId() == null ? dateDeLaVisite(dossier, anciennes) : null;
+        if (dateVisite != null) {
+            dossier.setDatePriseEnCharge(dateVisite);
+            if (requete.getLignes() != null) {
+                requete.getLignes().forEach(ligne -> ligne.setDatePriseEnCharge(dateVisite));
+            }
+        }
         List<LigneFactureStructure> nouvelles = requete.lignesCompletees();
         nouvelles.forEach(ligne -> ligne.setDossierId(dossierId));
         tracerLignes(traces, facture, utilisateur, dossier, anciennes, nouvelles);
@@ -926,6 +940,21 @@ public class ServiceFacturation {
         dossier.setUpdatedAt(LocalDateTime.now());
         traces.forEach(facture::tracer);
         return finaliser(facture);
+    }
+
+    /**
+     * Date de prise en charge d'une visite déjà saisie : celle du dossier ; pour un dossier
+     * d'avant qu'il la garde, celle de ses prestations, sinon le jour de son enregistrement.
+     */
+    private static LocalDate dateDeLaVisite(DossierPatient dossier, List<LigneFactureStructure> lignes) {
+        if (dossier.getDatePriseEnCharge() != null) {
+            return dossier.getDatePriseEnCharge();
+        }
+        return lignes.stream()
+                .map(LigneFactureStructure::getDatePriseEnCharge)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(dossier.getCreatedAt() == null ? null : dossier.getCreatedAt().toLocalDate());
     }
 
     /** Retire un patient de la facture : son dossier, ses prestations et ses pièces. */
@@ -1089,14 +1118,14 @@ public class ServiceFacturation {
 
     /**
      * Pièces d'identification des régimes sans carte : la CNI recto verso pour le Plan
-     * Sésame, l'extrait de naissance pour les enfants. Le ticket de caisse n'en fait pas
-     * partie : facultatif au poste, il n'est exigé que des dossiers que le BCSU crée dans la
-     * facture d'un centre ou d'un EPS (cf. {@link DossierPatient#exigeTicketDeCaisse()}).
+     * Sésame. La photo de l'extrait de naissance des enfants est facultative depuis le
+     * 19/10/2026 : son absence ne laisse plus le dossier « à compléter ». Le ticket de caisse
+     * n'en fait pas partie : facultatif au poste, il n'est exigé que des dossiers que le BCSU
+     * crée dans la facture d'un centre ou d'un EPS (cf. {@link DossierPatient#exigeTicketDeCaisse()}).
      */
     protected List<String> piecesExigees(Regime regime) {
         return switch (regime) {
             case SESAME -> List.of(PieceDossier.CNI_RECTO, PieceDossier.CNI_VERSO);
-            case ZERO_CINQ_ANS -> List.of(PieceDossier.EXTRAIT_NAISSANCE);
             default -> List.of();
         };
     }
