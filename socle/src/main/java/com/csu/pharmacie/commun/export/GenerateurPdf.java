@@ -27,6 +27,7 @@ import com.csu.pharmacie.entity.LigneHorsCsu;
 import com.csu.pharmacie.commun.web.ExceptionMetier;
 import com.csu.pharmacie.commun.client.dto.StructureDto;
 import com.csu.pharmacie.entity.TypeStructure;
+import com.csu.pharmacie.utils.ColonnesFactureStructure;
 import com.csu.pharmacie.utils.NombreEnLettres;
 
 import java.io.ByteArrayOutputStream;
@@ -70,7 +71,8 @@ public class GenerateurPdf {
             enTeteTable(table, "N°", "Bénéficiaire", "Matricule", "Prestation", "Qté",
                     "Prix unit.", "Montant", "Part bénéf.", "Part SEN-CSU");
 
-            List<LigneFactureStructure> lignes = facture.getLignes() == null ? List.of() : facture.getLignes();
+            // Derniers enregistrés en tête, comme l'écran et les autres documents de la facture.
+            List<LigneFactureStructure> lignes = ColonnesFactureStructure.recentesEnTete(facture.getLignes());
             int index = 1;
             for (LigneFactureStructure ligne : lignes) {
                 boolean paire = index % 2 == 0;
@@ -113,7 +115,8 @@ public class GenerateurPdf {
             enTeteTable(table, "N°", "Nom et prénom", "Matricule", "Sexe", "Date naiss.",
                     "Téléphone", "Actes", "Montant", "Part SEN-CSU");
 
-            List<LigneFactureStructure> lignes = facture.getLignes() == null ? List.of() : facture.getLignes();
+            // Derniers enregistrés en tête : un bénéficiaire prend la place de sa visite la plus récente.
+            List<LigneFactureStructure> lignes = ColonnesFactureStructure.recentesEnTete(facture.getLignes());
             // Une ligne par bénéficiaire : on agrège les prestations d'un même patient,
             // c'est ce que le modèle officiel attend (liste de personnes, pas d'actes).
             Map<String, Agregat> parBeneficiaire = new LinkedHashMap<>();

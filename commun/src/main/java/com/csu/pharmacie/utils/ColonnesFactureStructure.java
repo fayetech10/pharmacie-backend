@@ -84,15 +84,25 @@ public final class ColonnesFactureStructure {
      * visite, aussi nombreuses soient-elles, tiennent sur sa ligne (cf. {@link #valeursVisite}).
      *
      * <p>Une visite = un dossier patient ; à défaut (anciennes saisies d'un centre), une lettre
-     * de garantie ; à défaut, un même nom — la règle de l'écran. Visites dans l'ordre de leur
-     * première date de prise en charge, prestations de chacune par date (tris stables).</p>
+     * de garantie ; à défaut, un même nom — la règle de l'écran.</p>
+     *
+     * <p>Les <b>derniers enregistrés en tête</b> (demandes des 19 et 20/10/2026), comme la liste
+     * des patients à l'écran, dans TOUS les documents : Excel, PDF et Word de la facture, liste
+     * « Liste + facture », classeur et liste nominative du district. L'ordre d'enregistrement est
+     * celui des lignes dans la facture : un patient ajouté va au bout, un patient modifié garde sa
+     * place. Les prestations d'une visite restent par date.</p>
      */
     public static List<List<LigneFactureStructure>> parVisite(List<LigneFactureStructure> lignes) {
         Map<String, List<LigneFactureStructure>> visites = new LinkedHashMap<>();
-        for (LigneFactureStructure ligne : parDate(lignes)) {
+        for (LigneFactureStructure ligne : lignes == null ? List.<LigneFactureStructure>of() : lignes) {
             visites.computeIfAbsent(cleVisite(ligne), cle -> new ArrayList<>()).add(ligne);
         }
-        return new ArrayList<>(visites.values());
+        List<List<LigneFactureStructure>> groupes = new ArrayList<>();
+        for (List<LigneFactureStructure> visite : visites.values()) {
+            groupes.add(parDate(visite));
+        }
+        Collections.reverse(groupes);
+        return groupes;
     }
 
     private static String cleVisite(LigneFactureStructure l) {
@@ -109,25 +119,18 @@ public final class ColonnesFactureStructure {
      * Groupes de lignes pour l'export des documents de la facture (Excel, PDF, Word) : une
      * ligne par visite pour tous les régimes. Les prestations d'une même visite tiennent sur la
      * ligne du patient, chacune à la ligne dans sa cellule — prestation, P.U et montant alignés —
-     * sans dupliquer l'identité du patient (une seule occurrence par visite).
-     *
-     * <p>Les <b>derniers enregistrés en tête</b> (demande du 19/10/2026), comme la liste des
-     * patients à l'écran. L'ordre d'enregistrement est celui des lignes dans la facture : un
-     * patient ajouté va au bout, un patient modifié garde sa place. Les prestations d'une visite
-     * restent par date. Vaut aussi pour les feuilles « facture » de la consolidation district ;
-     * les listes PDF des 0-5 ans ({@link #parVisite}) restent chronologiques.</p>
+     * sans dupliquer l'identité du patient (une seule occurrence par visite). Derniers
+     * enregistrés en tête, cf. {@link #parVisite}.
      */
     public static List<List<LigneFactureStructure>> groupesPourRegime(Regime regime, List<LigneFactureStructure> lignes) {
-        Map<String, List<LigneFactureStructure>> visites = new LinkedHashMap<>();
-        for (LigneFactureStructure ligne : lignes == null ? List.<LigneFactureStructure>of() : lignes) {
-            visites.computeIfAbsent(cleVisite(ligne), cle -> new ArrayList<>()).add(ligne);
-        }
-        List<List<LigneFactureStructure>> groupes = new ArrayList<>();
-        for (List<LigneFactureStructure> visite : visites.values()) {
-            groupes.add(parDate(visite));
-        }
-        Collections.reverse(groupes);
-        return groupes;
+        return parVisite(lignes);
+    }
+
+    /** Les lignes une par une, dans l'ordre des documents (cf. {@link #parVisite}) : derniers enregistrés en tête. */
+    public static List<LigneFactureStructure> recentesEnTete(List<LigneFactureStructure> lignes) {
+        List<LigneFactureStructure> aPlat = new ArrayList<>();
+        parVisite(lignes).forEach(aPlat::addAll);
+        return aPlat;
     }
 
     /**

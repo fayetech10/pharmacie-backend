@@ -100,6 +100,37 @@ class ExportsDistrictTest {
     }
 
     @Test
+    void listesNominativesPlacentLesDerniersEnregistresEnTete() throws Exception {
+        // Octobre : Awa enregistrée avant Modou. Septembre : Binta. Factures passées dans le désordre.
+        LigneFactureStructure awa = LigneFactureStructure.builder().dossierId("d1").designation("Consultation")
+                .quantite(1).prixUnitaire(1400).montant(1400).montantSencsu(1400)
+                .patientPrenom("Awa").patientNom("Diop").datePriseEnCharge(LocalDate.of(2026, 10, 3)).build();
+        LigneFactureStructure modou = LigneFactureStructure.builder().dossierId("d2").designation("Consultation")
+                .quantite(1).prixUnitaire(1400).montant(1400).montantSencsu(1400)
+                .patientPrenom("Modou").patientNom("Fall").datePriseEnCharge(LocalDate.of(2026, 10, 5)).build();
+        LigneFactureStructure binta = LigneFactureStructure.builder().dossierId("d0").designation("Consultation")
+                .quantite(1).prixUnitaire(1400).montant(1400).montantSencsu(1400)
+                .patientPrenom("Binta").patientNom("Sarr").datePriseEnCharge(LocalDate.of(2026, 9, 20)).build();
+        FactureStructure octobre = FactureStructure.builder().id("f10").numero("FS-202610-00010").structureSanitaireId("ps-1")
+                .structureNom("Lalane").regime(Regime.ZERO_CINQ_ANS).mois(10).annee(2026).statut(StatutFacture.BROUILLON)
+                .lignes(new ArrayList<>(List.of(awa, modou))).montantTotal(2800).montantTotalSencsu(2800).build();
+        FactureStructure septembre = FactureStructure.builder().id("f09").numero("FS-202609-00004").structureSanitaireId("ps-1")
+                .structureNom("Lalane").regime(Regime.ZERO_CINQ_ANS).mois(9).annee(2026).statut(StatutFacture.BROUILLON)
+                .lignes(new ArrayList<>(List.of(binta))).montantTotal(1400).montantTotalSencsu(1400).build();
+
+        String district = texte(new GenerateurPdfEnfantsDistrict().listeNominative(List.of(octobre, septembre), annuaire(),
+                new GenerateurPdfEnfantsDistrict.Contexte("District sanitaire Thiès", "Thiès", null, 2026)));
+        assertTrue(district.indexOf("Modou") >= 0 && district.indexOf("Modou") < district.indexOf("Awa")
+                && district.indexOf("Awa") < district.indexOf("Binta"), "district : " + district);
+
+        String listeFacture = texte(com.csu.pharmacie.utils.PdfFactureEnfants.plusieurs(List.of(
+                new com.csu.pharmacie.utils.PdfFactureEnfants.FactureAImprimer(octobre,
+                        com.csu.pharmacie.utils.PdfFactureEnfants.Structure.de("Lalane", null, "Thiès")))));
+        assertTrue(listeFacture.indexOf("Modou") >= 0 && listeFacture.indexOf("Modou") < listeFacture.indexOf("Awa"),
+                "Liste + facture : " + listeFacture);
+    }
+
+    @Test
     void situationDistrictEtClasseurListentAussiLeCentre() throws Exception {
         EnteteDocument entete = EnteteDocument.builder().titre("Situation").districtNom("District sanitaire Thiès")
                 .periode("Octobre 2026").regimeLibelle("Enfants de moins de 5 ans").build();

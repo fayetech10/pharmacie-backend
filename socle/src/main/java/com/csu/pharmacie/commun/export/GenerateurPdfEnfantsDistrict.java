@@ -365,7 +365,12 @@ public class GenerateurPdfEnfantsDistrict {
                 .filter(s -> s.getId() != null && s.isActif())
                 .forEach(s -> parStructure.putIfAbsent(s.getId(),
                         new Bilan(Documents.ouVide(s.getNom()), s.getTypeStructure())));
-        for (FactureStructure f : factures) {
+        // Factures d'une même structure mises bout à bout par période croissante : la liste
+        // nominative inverse l'ordre d'enregistrement, le mois le plus récent passe donc en tête.
+        List<FactureStructure> parPeriode = new ArrayList<>(factures);
+        parPeriode.sort(Comparator.comparingInt(FactureStructure::getAnnee)
+                .thenComparingInt(FactureStructure::getMois));
+        for (FactureStructure f : parPeriode) {
             String id = f.getStructureSanitaireId() == null ? "" : f.getStructureSanitaireId();
             StructureDto dto = structures.get(id);
             Bilan b = parStructure.computeIfAbsent(id, cle -> new Bilan(

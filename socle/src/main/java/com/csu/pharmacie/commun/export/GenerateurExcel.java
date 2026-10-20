@@ -171,8 +171,10 @@ public class GenerateurExcel {
             });
             lot.factures().add(facture);
         }
+        // Période la plus récente en tête (demande du 20/10/2026), puis régime.
         lots.values().forEach(lot -> lot.factures().sort(Comparator.comparingInt(FactureStructure::getAnnee)
                 .thenComparingInt(FactureStructure::getMois)
+                .reversed()
                 .thenComparing(f -> f.getRegime() == null ? "" : f.getRegime().getLibelle())));
         return lots.values().stream().sorted(ordre(Lot::type, Lot::nom)).toList();
     }

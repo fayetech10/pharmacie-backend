@@ -22,9 +22,12 @@ import java.text.DecimalFormatSymbols;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import com.csu.pharmacie.utils.ColonnesFactureStructure;
 import com.csu.pharmacie.utils.NombreEnLettres;
 
 @Service
@@ -41,6 +44,34 @@ public class ExportService {
     private static byte[] caveatTtf;
     private static boolean caveatChecked;
 
+    // Ordre chronologique de chaque type de donnée exportée ; les documents l'inversent.
+    private static final Comparator<Facture> FACTURES_CHRONO = Comparator.comparingInt(Facture::getAnnee)
+            .thenComparingInt(Facture::getMois)
+            .thenComparing(Facture::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder()));
+    private static final Comparator<FactureStructure> FACTURES_STRUCTURE_CHRONO = Comparator
+            .comparingInt(FactureStructure::getAnnee)
+            .thenComparingInt(FactureStructure::getMois)
+            .thenComparing(FactureStructure::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder()));
+    private static final Comparator<LettreGarantie> LETTRES_CHRONO =
+            Comparator.comparing(LettreGarantie::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder()));
+
+    /**
+     * Les plus récents d'abord (demande du 20/10/2026) : dans les Excel et PDF exportés, les
+     * dernières données ouvrent le tableau au lieu de le clore.
+     */
+    private static <T> List<T> plusRecentsDAbord(List<T> elements, Comparator<T> chronologique) {
+        List<T> tries = new ArrayList<>(elements == null ? List.of() : elements);
+        tries.sort(chronologique.reversed());
+        return tries;
+    }
+
+    /** Lignes d'une facture pharmacie, la dernière saisie en tête. */
+    private static List<LigneFacture> lignesRecentesEnTete(Facture facture) {
+        List<LigneFacture> lignes = new ArrayList<>(facture.getLignes() == null ? List.of() : facture.getLignes());
+        Collections.reverse(lignes);
+        return lignes;
+    }
+
     public byte[] exportExcel(List<Facture> factures) {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Factures");
@@ -55,7 +86,7 @@ public class ExportService {
             headerRow.createCell(6).setCellValue("Statut");
 
             int rowIdx = 1;
-            for (Facture facture : factures) {
+            for (Facture facture : plusRecentsDAbord(factures, FACTURES_CHRONO)) {
                 Row row = sheet.createRow(rowIdx++);
                 row.createCell(0).setCellValue(facture.getId());
                 row.createCell(1).setCellValue(facture.getPharmacieNom());
@@ -252,7 +283,7 @@ public class ExportService {
             }
 
             // 5. Lignes de données
-            List<LigneFacture> lignes = facture.getLignes() != null ? facture.getLignes() : new ArrayList<>();
+            List<LigneFacture> lignes = lignesRecentesEnTete(facture);
             int rowIdx = 11;
             int counter = 1;
             double sumMontant = 0;
@@ -458,11 +489,11 @@ public class ExportService {
             }
 
             int rowIdxP = 1;
-            for (Facture f : facturesPharma) {
+            for (Facture f : plusRecentsDAbord(facturesPharma, FACTURES_CHRONO)) {
                 String moisAnnee = getMonthName(f.getMois()) + " " + f.getAnnee();
                 String dateStr = f.getCreatedAt() != null ? f.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "";
                 if (f.getLignes() != null) {
-                    for (LigneFacture ligne : f.getLignes()) {
+                    for (LigneFacture ligne : lignesRecentesEnTete(f)) {
                         Row row = sheetPharma.createRow(rowIdxP++);
                         row.createCell(0).setCellValue(f.getPharmacieNom() != null ? f.getPharmacieNom() : "");
                         row.createCell(1).setCellValue(moisAnnee);
@@ -491,13 +522,13 @@ public class ExportService {
             }
 
             int rowIdxS = 1;
-            for (FactureStructure f : facturesStruct) {
+            for (FactureStructure f : plusRecentsDAbord(facturesStruct, FACTURES_STRUCTURE_CHRONO)) {
                 String moisAnnee = getMonthName(f.getMois()) + " " + f.getAnnee();
                 String dateStr = f.getCreatedAt() != null ? f.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "";
                 String regimeStr = f.getRegime() != null ? f.getRegime().name() : "";
-                
+
                 if (f.getLignes() != null) {
-                    for (LigneFactureStructure ligne : f.getLignes()) {
+                    for (LigneFactureStructure ligne : ColonnesFactureStructure.recentesEnTete(f.getLignes())) {
                         Row row = sheetStruct.createRow(rowIdxS++);
                         row.createCell(0).setCellValue(f.getStructureNom() != null ? f.getStructureNom() : "");
                         row.createCell(1).setCellValue(regimeStr);
@@ -543,7 +574,7 @@ public class ExportService {
             document.add(new Paragraph("Rapport des Factures"));
             document.add(new Paragraph(" "));
 
-            for (Facture facture : factures) {
+            for (Facture facture : plusRecentsDAbord(factures, FACTURES_CHRONO)) {
                 document.add(new Paragraph("Facture ID: " + facture.getId() + " - Pharmacie: " + facture.getPharmacieNom() + " - Montant: " + facture.getMontantTotal() + " - Statut: " + facture.getStatut()));
             }
 
@@ -728,7 +759,7 @@ public class ExportService {
                 table.addCell(cell);
             }
 
-            List<LigneFacture> lignes = facture.getLignes() != null ? facture.getLignes() : new ArrayList<>();
+            List<LigneFacture> lignes = lignesRecentesEnTete(facture);
             int index = 1;
             double sumMontant = 0;
             double sumBenef = 0;
@@ -937,7 +968,7 @@ public class ExportService {
 
             DateTimeFormatter df = DateTimeFormatter.ofPattern("dd/MM/yyyy");
             int r = 1;
-            for (LettreGarantie l : lettres) {
+            for (LettreGarantie l : plusRecentsDAbord(lettres, LETTRES_CHRONO)) {
                 Row row = sheet.createRow(r++);
                 row.createCell(0).setCellValue(l.getNumero());
                 row.createCell(1).setCellValue(l.getCreatedAt() != null ? l.getCreatedAt().format(df) : "");
@@ -964,7 +995,7 @@ public class ExportService {
 
     /**
      * Registre mensuel des lettres de garantie d'un agent BCSU : N° de lettre, nom et
-     * prénom du bénéficiaire, dans l'ordre d'émission. Les lettres annulées restent listées
+     * prénom du bénéficiaire, la dernière émise en tête. Les lettres annulées restent listées
      * (mention « annulée ») pour que la suite des numéros soit complète.
      */
     public byte[] exportRegistreLettresGarantiePdf(List<LettreGarantie> lettres, int mois, int annee,
@@ -1047,7 +1078,7 @@ public class ExportService {
                 table.addCell(cellule);
             }
             int index = 1;
-            for (LettreGarantie l : lettres) {
+            for (LettreGarantie l : plusRecentsDAbord(lettres, LETTRES_CHRONO)) {
                 BaseColor fond = index % 2 == 0 ? grisLigne : BaseColor.WHITE;
                 Phrase numero = new Phrase(Objects.toString(l.getNumero(), ""), celluleFont);
                 if (l.getStatut() == StatutLettreGarantie.ANNULEE) {

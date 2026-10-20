@@ -36,6 +36,7 @@ import java.text.DecimalFormatSymbols;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import com.csu.pharmacie.utils.ColonnesFactureStructure;
@@ -1085,7 +1086,7 @@ public class FactureStructureExportService {
         List<LigneFactureStructure> toutesLignes = new ArrayList<>();
         double totalSencsu = 0;
 
-        for (FactureStructure f : factures) {
+        for (FactureStructure f : parCreation(factures)) {
             if (f.getLignes() != null) {
                 toutesLignes.addAll(f.getLignes());
             }
@@ -1116,7 +1117,7 @@ public class FactureStructureExportService {
         List<LigneFactureStructure> toutesLignes = new ArrayList<>();
         double totalSencsu = 0;
 
-        for (FactureStructure f : factures) {
+        for (FactureStructure f : parCreation(factures)) {
             if (f.getLignes() != null) {
                 toutesLignes.addAll(f.getLignes());
             }
@@ -1126,5 +1127,17 @@ public class FactureStructureExportService {
         merged.setMontantTotalSencsu(totalSencsu);
 
         return exportFactureStructurePdf(merged);
+    }
+
+    /**
+     * Factures mises bout à bout dans l'ordre de leur création : l'export inverse l'ordre
+     * d'enregistrement des lignes, la dernière facture du mois passe donc en tête.
+     */
+    private static List<FactureStructure> parCreation(List<FactureStructure> factures) {
+        List<FactureStructure> triees = new ArrayList<>(factures);
+        triees.sort(Comparator.comparingInt(FactureStructure::getAnnee)
+                .thenComparingInt(FactureStructure::getMois)
+                .thenComparing(FactureStructure::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder())));
+        return triees;
     }
 }
