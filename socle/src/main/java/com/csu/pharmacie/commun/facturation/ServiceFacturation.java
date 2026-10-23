@@ -1692,8 +1692,18 @@ public class ServiceFacturation {
      * Enregistrement après un retrait. La structure émettrice repasse par {@link #finaliser}
      * (prix relus au référentiel). Le service régional ne fait que recalculer les montants : il
      * ne réécrit pas les prix d'une facture qu'il n'a pas saisie, souvent déjà transmise.
+     *
+     * <p>Une facture vidée de sa dernière prestation est supprimée (23/10/2026) : elle restait
+     * sinon affichée « Brouillon » — ou à son étape — à 0 F, comme si la structure avait saisi.</p>
+     *
+     * @return la facture enregistrée, {@code null} si elle a été supprimée
      */
     private FactureStructure finaliserRetrait(FactureStructure facture) {
+        if (sansContenu(facture)) {
+            depotPieces.deleteByFactureId(facture.getId());
+            depot.delete(facture);
+            return null;
+        }
         if (!parServiceRegional()) {
             return finaliser(facture);
         }
@@ -1703,6 +1713,17 @@ public class ServiceFacturation {
         FactureStructure enregistree = depot.save(facture);
         synchroniserFeuillesSoins(enregistree);
         return enregistree;
+    }
+
+    /**
+     * Plus aucune prestation, ni patient qui attend encore les siennes : un dossier « à compléter »
+     * (posé par le BCSU d'un centre, ou saisi incomplet par un poste) garde la facture, sans quoi
+     * le patient enregistré disparaîtrait avec elle.
+     */
+    private static boolean sansContenu(FactureStructure facture) {
+        boolean sansPrestation = facture.getLignes() == null || facture.getLignes().isEmpty();
+        return sansPrestation && (facture.getDossiers() == null
+                || facture.getDossiers().stream().noneMatch(DossierPatient::estACompleter));
     }
 
     /**

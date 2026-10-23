@@ -32,7 +32,10 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -43,7 +46,8 @@ import static org.mockito.Mockito.when;
 /**
  * Le service régional supprime une facture de SA région, ou un patient / une prestation qu'elle
  * contient — brouillon compris (23/10/2026) — mais ni hors de sa région, ni une fois la facture
- * validée par le niveau central.
+ * validée par le niveau central. Et quel que soit l'auteur du retrait, une facture vidée de sa
+ * dernière prestation est supprimée, sauf si un patient y attend encore les siennes.
  */
 class SuppressionServiceRegionalTest {
 
@@ -69,8 +73,17 @@ class SuppressionServiceRegionalTest {
     }
 
     private static void connecter(String regionId) {
-        UtilisateurAuthentifie utilisateur = UtilisateurAuthentifie.builder()
-                .id("sr-1").prenom("Service").nom("Régional").role(Role.SERVICE_REGIONAL).regionId(regionId).build();
+        authentifier(UtilisateurAuthentifie.builder()
+                .id("sr-1").prenom("Service").nom("Régional").role(Role.SERVICE_REGIONAL).regionId(regionId).build());
+    }
+
+    /** L'agent du poste qui a saisi la facture. */
+    private static void connecterPoste() {
+        authentifier(UtilisateurAuthentifie.builder()
+                .id("agent-1").prenom("Agent").nom("Poste").role(Role.POSTE_SANTE).structureId("poste-1").build());
+    }
+
+    private static void authentifier(UtilisateurAuthentifie utilisateur) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(utilisateur, null, List.of()));
     }
@@ -167,5 +180,46 @@ class SuppressionServiceRegionalTest {
         assertEquals(1, resultat.getLignes().size());
         assertEquals("FALL", resultat.getLignes().get(0).getPatientNom());
         assertEquals(3000, resultat.getMontantTotal());
+    }
+
+    // ─────────────── facture vidée de sa dernière prestation ───────────────
+
+    @Test
+    void retirerLeDernierPatientSupprimeLaFacture() {
+        FactureStructure facture = facture(StatutFacture.ENVOYEE);
+
+        service.supprimerDossier(FACTURE, "dossier-diop");
+        FactureStructure resultat = service.supprimerDossier(FACTURE, "dossier-fall");
+
+        assertNull(resultat);
+        verify(pieces).deleteByFactureId(FACTURE);
+        verify(depot).delete(facture);
+    }
+
+    @Test
+    void lePosteQuiRetireSaDernierePrestationSupprimeSonBrouillon() {
+        FactureStructure facture = facture(StatutFacture.BROUILLON);
+        connecterPoste();
+
+        service.supprimerLigne(FACTURE, 0);
+        FactureStructure resultat = service.supprimerLigne(FACTURE, 0);
+
+        assertNull(resultat);
+        verify(depot).delete(facture);
+    }
+
+    @Test
+    void unPatientEncoreACompleterGardeLaFacture() {
+        FactureStructure facture = facture(StatutFacture.BROUILLON);
+        facture.getDossiers().add(DossierPatient.builder()
+                .id("dossier-ndiaye").statut(DossierPatient.A_COMPLETER).nom("NDIAYE").prenom("Moussa").build());
+
+        service.supprimerLigne(FACTURE, 0);
+        FactureStructure resultat = service.supprimerLigne(FACTURE, 0);
+
+        assertNotNull(resultat);
+        assertTrue(resultat.getLignes().isEmpty());
+        assertEquals(0, resultat.getMontantTotal());
+        verify(depot, never()).delete(any(FactureStructure.class));
     }
 }

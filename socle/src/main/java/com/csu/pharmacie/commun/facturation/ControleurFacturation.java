@@ -73,6 +73,11 @@ public abstract class ControleurFacturation {
         return service().remplacer(id, requete);
     }
 
+    /*
+     * Retraits (patient, prestation, dossier) : réponse vide quand la facture, vidée de sa
+     * dernière prestation, a été supprimée — l'écran quitte alors la facture.
+     */
+
     /** Supprime toutes les lignes d'un bénéficiaire (référence = n° de LG ou id patient). */
     @DeleteMapping("/{id}/patients")
     public FactureStructure supprimerPatient(@PathVariable String id, @RequestParam("lettre") String reference) {
