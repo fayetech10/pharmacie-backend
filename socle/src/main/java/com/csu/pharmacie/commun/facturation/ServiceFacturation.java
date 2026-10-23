@@ -1126,17 +1126,28 @@ public class ServiceFacturation {
     }
 
     /**
-     * Pièces d'identification des régimes sans carte : la CNI recto verso pour le Plan
-     * Sésame. La photo de l'extrait de naissance des enfants est facultative depuis le
-     * 19/10/2026 : son absence ne laisse plus le dossier « à compléter ». Le ticket de caisse
-     * n'en fait pas partie : facultatif au poste, il n'est exigé que des dossiers que le BCSU
-     * crée dans la facture d'un centre ou d'un EPS (cf. {@link DossierPatient#exigeTicketDeCaisse()}).
+     * Pièces sans lesquelles le dossier reste « à compléter » — donc ni validé, ni envoyé :
+     * <ul>
+     *   <li>Plan Sésame : la CNI recto verso ;</li>
+     *   <li>régimes à carte (23/10/2026) : la photo de la carte d'assuré, et pour les régimes
+     *       contributifs — le patient paie sa part — celle du ticket de caisse ;</li>
+     *   <li>enfants de moins de 5 ans : rien, la photo de l'extrait est facultative depuis le
+     *       19/10/2026.</li>
+     * </ul>
+     * Une saisie sur lettre de garantie n'est pas concernée (voir {@link #statutDossier}) ; le
+     * ticket des dossiers du BCSU d'un centre suit sa propre règle ({@link DossierPatient#exigeTicketDeCaisse()}).
      */
     protected List<String> piecesExigees(Regime regime) {
-        return switch (regime) {
-            case SESAME -> List.of(PieceDossier.CNI_RECTO, PieceDossier.CNI_VERSO);
-            default -> List.of();
-        };
+        if (regime == Regime.SESAME) {
+            return List.of(PieceDossier.CNI_RECTO, PieceDossier.CNI_VERSO);
+        }
+        if (regime.estContributif()) {
+            return List.of(PieceDossier.CARTE_ASSURE, PieceDossier.TICKET_CAISSE);
+        }
+        if (regime.exigeCarteCsu()) {
+            return List.of(PieceDossier.CARTE_ASSURE);
+        }
+        return List.of();
     }
 
     /**
