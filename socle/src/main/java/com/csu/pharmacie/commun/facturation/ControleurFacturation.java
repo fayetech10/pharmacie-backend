@@ -139,7 +139,7 @@ public abstract class ControleurFacturation {
     @DeleteMapping("/{id}")
     public Map<String, String> supprimer(@PathVariable String id) {
         service().supprimer(id);
-        return Map.of("message", "Brouillon supprimé");
+        return Map.of("message", "Facture supprimée");
     }
 
     // ────────────────────────────── transmission ──────────────────────────────

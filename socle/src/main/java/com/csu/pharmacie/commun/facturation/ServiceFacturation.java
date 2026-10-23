@@ -957,11 +957,14 @@ public class ServiceFacturation {
                 .orElse(dossier.getCreatedAt() == null ? null : dossier.getCreatedAt().toLocalDate());
     }
 
-    /** Retire un patient de la facture : son dossier, ses prestations et ses pièces. */
+    /**
+     * Retire un patient de la facture : son dossier, ses prestations et ses pièces. Par la
+     * structure émettrice avant l'envoi, ou par le service régional (voir {@link #factureDontRetirer}).
+     */
     @Transactional
     public FactureStructure supprimerDossier(String factureId, String dossierId) {
         UtilisateurAuthentifie utilisateur = ContexteUtilisateur.courant();
-        FactureStructure facture = factureModifiable(factureId);
+        FactureStructure facture = factureDontRetirer(factureId);
         DossierPatient dossier = dossierDe(facture, dossierId);
         int prestations = lignesDu(facture, dossierId).size();
         facture.getLignes().removeIf(ligne -> dossierId.equals(ligne.getDossierId()));
@@ -969,7 +972,7 @@ public class ServiceFacturation {
         depotPieces.deleteByDossierId(dossierId);
         facture.tracer(trace(facture, utilisateur, dossier, "Patient",
                 dossier.nomComplet() + " — " + prestations + " prestation(s)", null, "Patient retiré de la facture"));
-        return finaliser(facture);
+        return finaliserRetrait(facture);
     }
 
     /** Photo d'un dossier, lue à la demande (elle n'est pas dans la facture). */
@@ -1557,7 +1560,7 @@ public class ServiceFacturation {
     /** Supprime toutes les lignes d'un bénéficiaire (n° de lettre de garantie ou identifiant patient). */
     @Transactional
     public FactureStructure supprimerPatient(String factureId, String reference) {
-        FactureStructure facture = factureModifiable(factureId);
+        FactureStructure facture = factureDontRetirer(factureId);
         List<LigneFactureStructure> restantes = facture.getLignes().stream()
                 .filter(l -> !reference.equals(l.getLettreGarantieNumero())
                         && !reference.equals(l.getPatientId())
@@ -1579,7 +1582,7 @@ public class ServiceFacturation {
         retires.forEach(d -> depotPieces.deleteByDossierId(d.getId()));
         facture.tracer(trace(facture, ContexteUtilisateur.courant(), null, "Patient", reference, null,
                 "Patient retiré de la facture (" + reference + ")"));
-        return finaliser(facture);
+        return finaliserRetrait(facture);
     }
 
     @Transactional
@@ -1613,12 +1616,12 @@ public class ServiceFacturation {
 
     @Transactional
     public FactureStructure supprimerLigne(String factureId, int index) {
-        FactureStructure facture = factureModifiable(factureId);
+        FactureStructure facture = factureDontRetirer(factureId);
         LigneFactureStructure ligne = ligneA(facture, index);
         facture.getLignes().remove(index);
         facture.tracer(trace(facture, ContexteUtilisateur.courant(), dossierDeLigne(facture, ligne),
                 "Prestation supprimée", resume(ligne), null, null));
-        return finaliser(facture);
+        return finaliserRetrait(facture);
     }
 
     private DossierPatient dossierDeLigne(FactureStructure facture, LigneFactureStructure ligne) {
@@ -1647,6 +1650,59 @@ public class ServiceFacturation {
         }
         normaliserDossiers(facture);
         return facture;
+    }
+
+    /**
+     * Facture dont on retire un patient ou une prestation. La structure émettrice : la sienne,
+     * tant qu'elle est modifiable. Le service régional (23/10/2026) : toute facture de SA région,
+     * brouillon compris — il fait le ménage dans les saisies de son réseau — jusqu'à la validation
+     * nationale (voir {@link #factureDuServiceRegional}).
+     */
+    private FactureStructure factureDontRetirer(String id) {
+        if (!parServiceRegional()) {
+            return factureModifiable(id);
+        }
+        FactureStructure facture = factureDuServiceRegional(id);
+        normaliserDossiers(facture);
+        return facture;
+    }
+
+    private static boolean parServiceRegional() {
+        return ContexteUtilisateur.courant().getRole() == Role.SERVICE_REGIONAL;
+    }
+
+    /**
+     * Facture que le service régional peut supprimer ou alléger : de sa région, à toute étape
+     * jusqu'à sa propre validation. Une fois validée par le niveau central ou payée, elle
+     * engage le paiement : elle ne se touche plus.
+     */
+    private FactureStructure factureDuServiceRegional(String id) {
+        FactureStructure facture = depot.findById(id)
+                .orElseThrow(() -> ExceptionMetier.introuvable("Facture introuvable : " + id));
+        verifierRegion(facture, ContexteUtilisateur.courant());
+        StatutFacture statut = facture.getStatut();
+        if (statut == StatutFacture.VALIDEE_NC || statut == StatutFacture.PAYEE) {
+            throw ExceptionMetier.conflit("Facture « " + statut.getLibelle()
+                    + " » : le service régional ne peut plus la modifier.");
+        }
+        return facture;
+    }
+
+    /**
+     * Enregistrement après un retrait. La structure émettrice repasse par {@link #finaliser}
+     * (prix relus au référentiel). Le service régional ne fait que recalculer les montants : il
+     * ne réécrit pas les prix d'une facture qu'il n'a pas saisie, souvent déjà transmise.
+     */
+    private FactureStructure finaliserRetrait(FactureStructure facture) {
+        if (!parServiceRegional()) {
+            return finaliser(facture);
+        }
+        regles.appliquer(facture);
+        synchroniserDossiers(facture);
+        facture.setUpdatedAt(LocalDateTime.now());
+        FactureStructure enregistree = depot.save(facture);
+        synchroniserFeuillesSoins(enregistree);
+        return enregistree;
     }
 
     /**
@@ -1740,8 +1796,18 @@ public class ServiceFacturation {
         }
     }
 
+    /**
+     * Supprime une facture. La structure émettrice : son brouillon seulement. Le service régional
+     * (23/10/2026) : toute facture de sa région, brouillon compris, avant la validation nationale.
+     */
     @Transactional
     public void supprimer(String id) {
+        if (parServiceRegional()) {
+            FactureStructure facture = factureDuServiceRegional(id);
+            depotPieces.deleteByFactureId(id);
+            depot.delete(facture);
+            return;
+        }
         FactureStructure facture = depot.findById(id)
                 .orElseThrow(() -> ExceptionMetier.introuvable("Facture introuvable : " + id));
         if (!ContexteUtilisateur.structureCourante().equals(facture.getStructureSanitaireId())) {

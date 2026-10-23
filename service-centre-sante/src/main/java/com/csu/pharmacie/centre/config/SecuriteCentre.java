@@ -72,6 +72,16 @@ public class SecuriteCentre {
                         .hasAnyRole("CENTRE_SANTE", "STRUCTURE_SANITAIRE", "DISTRICT",
                                 "SERVICE_REGIONAL", "SERVICE_CENTRAL", "ADMIN")
 
+                        // Suppressions (23/10/2026) : la structure émettrice, et le service régional
+                        // pour les factures de SA région — la facture entière, un patient ou une
+                        // prestation, brouillon compris. Région et étape vérifiées en service. AVANT
+                        // la règle générale d'écriture, qui n'admet pas le service régional.
+                        .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/factures-structure/*"),
+                                antMatcher(HttpMethod.DELETE, "/api/factures-structure/*/lignes/*"),
+                                antMatcher(HttpMethod.DELETE, "/api/factures-structure/*/dossiers/*"),
+                                antMatcher(HttpMethod.DELETE, "/api/factures-structure/*/patients"))
+                        .hasAnyRole("CENTRE_SANTE", "STRUCTURE_SANITAIRE", "SERVICE_REGIONAL", "ADMIN")
+
                         .requestMatchers(antMatcher("/api/factures-structure/**"),
                                 antMatcher("/api/hors-csu/**"))
                         .hasAnyRole("CENTRE_SANTE", "STRUCTURE_SANITAIRE", "ADMIN")
