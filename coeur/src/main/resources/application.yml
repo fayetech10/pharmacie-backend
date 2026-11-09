@@ -44,18 +44,18 @@ app:
     taux-prise-en-charge: ${APP_CSU_TAUX:0.5}
   facturation:
     cloture:
-      # Clôture mensuelle AUTOMATIQUE des factures de structure (circuit CSU) :
-      # le serveur transmet lui-même les brouillons complets du mois écoulé, sans
-      # bouton « Envoyer ». auto=false coupe l'automatisme (envoi redevient manuel).
-      auto: ${APP_CLOTURE_AUTO:true}
-      # Jour du mois (suivant) à partir duquel le mois précédent est clôturé : délai
-      # de grâce laissé pour saisir les patients vus en fin de mois.
+      # Clôture mensuelle automatique DÉSACTIVÉE : l'envoi des factures de structure
+      # est désormais manuel. Chaque poste de santé doit transmettre ses factures
+      # du mois écoulé via le bouton « Envoyer » de son espace factures.
+      # La variable d'environnement APP_CLOTURE_AUTO permet de réactiver l'automatisme
+      # si besoin (non recommandé), mais le scheduler a été supprimé — cette option
+      # n'a plus d'effet tant que ClotureMensuelleScheduler n'est pas rétabli.
+      auto: ${APP_CLOTURE_AUTO:false}
+      # Jour du mois (suivant) à partir duquel le mois précédent est considéré clôturé.
       jour: ${APP_CLOTURE_JOUR:5}
-      # Heure de passage quotidienne (cron Spring, fuseau Africa/Dakar).
+      # Heure de passage (conservée pour référence, scheduler supprimé).
       cron: ${APP_CLOTURE_CRON:0 0 23 * * *}
-      # Garde-fou de démarrage : premier mois (AAAA-MM) pouvant être clôturé
-      # automatiquement. Les mois antérieurs ne partent jamais seuls — évite une
-      # transmission massive rétroactive le jour de la mise en service. Vide = sans plancher.
+      # Premier mois (AAAA-MM) concerné. Vide = sans plancher.
       a-partir-de: ${APP_CLOTURE_A_PARTIR_DE:}
     cs-eps:
       # Facturation des centres de santé et EPS en deux temps (spécification « Facturation
