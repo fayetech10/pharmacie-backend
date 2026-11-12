@@ -79,6 +79,10 @@ public class ServiceCarteCsu {
     }
 
     public CarteCsu verifier(String code) {
+        return verifier(code, null);
+    }
+
+    public CarteCsu verifier(String code, LocalDate dateReference) {
         String codeNormalise = code == null ? "" : code.replaceAll("\\s+", "").toUpperCase(Locale.ROOT);
         if (!FORMAT_CODE.matcher(codeNormalise).matches()) {
             throw ExceptionMetier.invalide("Matricule CSU invalide : saisissez le code imprimé sur la carte (ex. V8658Y2605).");
@@ -106,7 +110,8 @@ public class ServiceCarteCsu {
         if (reponse == null || texte(reponse, "nom") == null) {
             throw ExceptionMetier.introuvable("Aucune carte CSU ne correspond au matricule « " + codeNormalise + " ».");
         }
-        return versCarte(reponse, codeNormalise, LocalDate.now(), periodeObservationMois);
+        LocalDate dateRef = dateReference != null ? dateReference : LocalDate.now();
+        return versCarte(reponse, codeNormalise, dateRef, periodeObservationMois);
     }
 
     /** Extrait les champs utiles ; période d'observation par défaut. Public pour les tests. */

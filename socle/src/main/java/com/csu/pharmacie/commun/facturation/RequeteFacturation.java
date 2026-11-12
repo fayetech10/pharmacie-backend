@@ -117,6 +117,7 @@ public class RequeteFacturation {
                 .matricule(nettoyer(patientMatricule))
                 .numeroCni(nettoyer(patientNumeroCni))
                 .numeroRegistre(nettoyer(numeroRegistre))
+                .datePriseEnCharge(datePriseEnCharge)
                 .verificationCarte(VerificationCarte.normaliser(verificationCarte))
                 .pieces(new ArrayList<>())
                 .build();

@@ -1,11 +1,14 @@
 package com.csu.pharmacie.poste.controleur;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.csu.pharmacie.commun.carte.ServiceCarteCsu;
+
+import java.time.LocalDate;
 
 /**
  * Vérification d'une carte CSU d'après le site officiel, pour préremplir un patient.
@@ -23,7 +26,9 @@ public class ControleurCarteCsu {
     private final ServiceCarteCsu service;
 
     @GetMapping
-    public ServiceCarteCsu.CarteCsu verifier(@RequestParam String code) {
-        return service.verifier(code);
+    public ServiceCarteCsu.CarteCsu verifier(
+            @RequestParam String code,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return service.verifier(code, date);
     }
 }

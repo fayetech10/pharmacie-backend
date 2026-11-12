@@ -432,11 +432,12 @@ public class ServiceFacturation {
         if (nouvelles.isEmpty()) {
             // Sans ligne, ReglesFacturation ne verrait jamais ce patient : le contrôle d'âge
             // du régime est fait ici, sur son identité.
+            LocalDate dateRefPriseEnCharge = requete.getDatePriseEnCharge() != null ? requete.getDatePriseEnCharge() : LocalDate.now();
             regles.controlerAge(regime, LigneFactureStructure.builder()
                     .patientNom(dossier.getNom())
                     .patientPrenom(dossier.getPrenom())
                     .patientDateNaissance(dossier.getDateNaissance())
-                    .datePriseEnCharge(LocalDate.now())
+                    .datePriseEnCharge(dateRefPriseEnCharge)
                     .build());
         }
 
@@ -1021,9 +1022,10 @@ public class ServiceFacturation {
             throw ExceptionMetier.invalide("Le code d'immatriculation du bénéficiaire est obligatoire pour ce régime.");
         }
 
+        LocalDate dateRef = dossier.getDatePriseEnCharge() != null ? dossier.getDatePriseEnCharge() : LocalDate.now();
         ServiceCarteCsu.CarteCsu carte;
         try {
-            carte = serviceCarteCsu.verifier(code);
+            carte = serviceCarteCsu.verifier(code, dateRef);
         } catch (ExceptionMetier e) {
             if (e.getStatut() != HttpStatus.SERVICE_UNAVAILABLE) {
                 throw e;
@@ -1045,7 +1047,7 @@ public class ServiceFacturation {
             } else if (carte.enPeriodeObservation()) {
                 motif = "Bénéficiaire en période d'observation : la prise en charge ne sera ouverte que le "
                         + carte.dateDebutDroits().format(Documents.DATE);
-            } else if (carte.dateDebut() != null && carte.dateDebut().isAfter(LocalDate.now())) {
+            } else if (carte.dateDebut() != null && carte.dateDebut().isAfter(dateRef)) {
                 motif = "Carte pas encore valide (adhésion le " + carte.dateDebut().format(Documents.DATE) + ")";
             } else {
                 motif = "Carte expirée" + (carte.dateFin() == null ? "" : " le " + carte.dateFin().format(Documents.DATE));
