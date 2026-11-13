@@ -69,6 +69,14 @@ public class User {
     @Builder.Default
     @Column(nullable = false)
     private boolean actif = true;
+
+    public boolean isActif() {
+        return actif;
+    }
+
+    public boolean getActif() {
+        return actif;
+    }
     /**
      * Mot de passe générique attribué à la création en masse : l'utilisateur doit le
      * changer à sa première connexion. Wrapper nullable → les comptes antérieurs ne

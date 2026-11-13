@@ -6,7 +6,7 @@
 #   ou         : mvn spring-boot:run "-Dspring-boot.run.profiles=local"
 #
 # La base est persistée dans backend/.h2data/ (conservée entre les redémarrages).
-# Le DataInitializer crée le compte admin par défaut au premier démarrage.
+# L'identité crée le compte administrateur par défaut sur une base neuve.
 # ─────────────────────────────────────────────────────────────────────────────
 spring:
   datasource:
@@ -21,7 +21,7 @@ spring:
     # Le dialecte H2 est détecté automatiquement depuis la connexion (inutile de le forcer).
     hibernate:
       ddl-auto: update
-  # Pas d'initialisation par script SQL (le schéma vient d'Hibernate, les données du DataInitializer).
+  # Pas d'initialisation par script SQL (le schéma vient d'Hibernate).
   sql:
     init:
       mode: never

@@ -428,26 +428,13 @@ public class StructureSanitaireService {
                 .orElseThrow(() -> new IllegalArgumentException("région introuvable : « " + valeur + " »"));
     }
 
-    /** Fichier Excel modèle (en-têtes + exemples EPS/CS/PS) pour l'import des structures. */
+    /** Fichier Excel modèle vierge (en-têtes uniquement) pour l'import des structures. */
     public byte[] genererModeleImportPostes() {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Structures sanitaires");
             Row header = sheet.createRow(0);
             for (int i = 0; i < COLONNES_IMPORT_POSTES.length; i++) {
                 header.createCell(i).setCellValue(COLONNES_IMPORT_POSTES[i]);
-            }
-
-            // Un exemple par type : le rattachement ne concerne que le poste de santé.
-            String[][] exemples = {
-                    {"EPS", "Hôpital Principal", "Avenue Nelson Mandela", "33 839 50 50", "hopital.principal@sencsu.sn", "", "", "Dakar", ""},
-                    {"CS", "Centre de Santé Gaspard Camara", "Rue 15 Angle 22", "33 821 00 00", "cs.gaspard@sencsu.sn", "", "", "Dakar", "Dakar Centre"},
-                    {"PS", "Poste de Santé Médina", "Quartier Médina", "77 000 00 00", "poste.medina@sencsu.sn", "", "DKCS01", "Dakar", "Dakar Centre"}
-            };
-            for (int l = 0; l < exemples.length; l++) {
-                Row ligne = sheet.createRow(l + 1);
-                for (int c = 0; c < exemples[l].length; c++) {
-                    ligne.createCell(c).setCellValue(exemples[l][c]);
-                }
             }
 
             for (int i = 0; i < COLONNES_IMPORT_POSTES.length; i++) {

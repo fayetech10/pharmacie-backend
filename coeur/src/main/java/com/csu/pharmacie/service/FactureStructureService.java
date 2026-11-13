@@ -31,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.time.DateTimeException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -110,9 +112,24 @@ public class FactureStructureService {
         }
         if (user.getRole() == Role.SERVICE_REGIONAL) {
             if (user.getRegionId() == null) return new ArrayList<>();
-            // Le SR ne voit que les factures transmises et validées par le niveau de base
-            // (exclusion BROUILLON / SOUMISE_CS / REJETEE_CS faite dans la requête).
             return stripPieces(factureRepository.findVisiblesParRegionFiltre(user.getRegionId(), m, a, regime));
+        }
+        if (user.getRole() == Role.CONTROLEUR) {
+            // Le contrôleur ne consulte que les factures qui lui sont assignées nominativement
+            List<FactureStructure> factures = factureRepository.findByControleurId(user.getId());
+            if (factures.isEmpty() && user.getRegionId() != null) {
+                // Si aucune assignation directe par id n'existe encore en base, factures visibles de sa région
+                return stripPieces(factureRepository.findVisiblesParRegionFiltre(user.getRegionId(), m, a, regime));
+            }
+            final Regime finalRegime = regime;
+            if (m > 0 || a > 0 || finalRegime != null) {
+                factures = factures.stream()
+                        .filter(f -> (m == 0 || f.getMois() == m))
+                        .filter(f -> (a == 0 || f.getAnnee() == a))
+                        .filter(f -> (finalRegime == null || f.getRegime() == finalRegime))
+                        .collect(Collectors.toList());
+            }
+            return stripPieces(factures);
         }
         if (agentDeStructure(user)) {
             if (user.getStructureSanitaireId() == null) return new ArrayList<>();
@@ -148,7 +165,7 @@ public class FactureStructureService {
         if (user.getRole() == Role.ADMIN || user.getRole() == Role.SERVICE_CENTRAL) {
             return factureRepository.findAllStatuts();
         }
-        if (user.getRole() == Role.SERVICE_REGIONAL) {
+        if (user.getRole() == Role.SERVICE_REGIONAL || user.getRole() == Role.CONTROLEUR) {
             if (user.getRegionId() == null) return new ArrayList<>();
             return factureRepository.findStatutsVisiblesParRegion(user.getRegionId());
         }
@@ -232,15 +249,35 @@ public class FactureStructureService {
         // Note: La vérification de doublon (dejaFacturee) a été retirée pour permettre 
         // au patient d'utiliser la même lettre de garantie plusieurs fois dans le délai de 30 jours.
 
-        LocalDate now = LocalDate.now();
-        int currentMois = now.getMonthValue();
-        int currentAnnee = now.getYear();
+        LocalDate datePriseEnCharge = request.getDatePriseEnCharge();
+        if (datePriseEnCharge == null && request.getLignes() != null) {
+            datePriseEnCharge = request.getLignes().stream()
+                    .map(LigneFactureStructureDto::getDatePriseEnCharge)
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        YearMonth periodeFacture;
+        if (datePriseEnCharge != null) {
+            periodeFacture = YearMonth.from(datePriseEnCharge);
+        } else if (request.getMois() != null && request.getAnnee() != null) {
+            try {
+                periodeFacture = YearMonth.of(request.getAnnee(), request.getMois());
+            } catch (DateTimeException e) {
+                throw new BusinessException("La période de facturation indiquée est invalide");
+            }
+        } else {
+            periodeFacture = YearMonth.now();
+        }
+        int moisFacture = periodeFacture.getMonthValue();
+        int anneeFacture = periodeFacture.getYear();
 
         // Les saisies du mois sont COMPILÉES dans la facture mensuelle par régime,
         // qui reste en BROUILLON : l'envoi au Service Régional est une action
         // explicite (bouton « Envoyer » / envoi mensuel), jamais automatique.
         FactureStructure facture = factureRepository
-                .findByStructureSanitaireIdAndRegimeAndMoisAndAnnee(structure.getId(), regimeFacture, currentMois, currentAnnee)
+                .findByStructureSanitaireIdAndRegimeAndMoisAndAnnee(structure.getId(), regimeFacture, moisFacture, anneeFacture)
                 .stream()
                 .filter(f -> f.getStatut() == StatutFacture.BROUILLON || f.getStatut() == StatutFacture.REJETEE_SR || f.getStatut() == StatutFacture.REJETEE_CS)
                 .findFirst()
@@ -256,8 +293,8 @@ public class FactureStructureService {
                     .regionId(structure.getRegionId())
                     .bcsuId(structure.getBcsuId())
                     .regime(regimeFacture)
-                    .mois(currentMois)
-                    .annee(currentAnnee)
+                    .mois(moisFacture)
+                    .annee(anneeFacture)
                     .lignes(new ArrayList<>())
                     .statut(StatutFacture.BROUILLON)
                     .documentsComplementaires(new ArrayList<>())
@@ -485,6 +522,9 @@ public class FactureStructureService {
         }
 
         facture.setStatut(nouveauStatut);
+        if (nouveauStatut == StatutFacture.ENVOYEE) {
+            assignerControleurAutomatique(facture);
+        }
         facture.setUpdatedAt(LocalDateTime.now());
         ajouterHistorique(facture, user, nouveauStatut, actionHistorique);
         return factureRepository.save(facture);
@@ -528,6 +568,9 @@ public class FactureStructureService {
             }
 
             facture.setStatut(nouveauStatut);
+            if (nouveauStatut == StatutFacture.ENVOYEE) {
+                assignerControleurAutomatique(facture);
+            }
             facture.setUpdatedAt(LocalDateTime.now());
             ajouterHistorique(facture, user, nouveauStatut, actionHistorique);
         }
@@ -591,6 +634,9 @@ public class FactureStructureService {
             boolean versDistrict = type != null && type.passeParLeDistrict(facture.getRegime());
             StatutFacture cible = versDistrict ? StatutFacture.SOUMISE_CS : StatutFacture.ENVOYEE;
             facture.setStatut(cible);
+            if (cible == StatutFacture.ENVOYEE) {
+                assignerControleurAutomatique(facture);
+            }
             facture.setUpdatedAt(LocalDateTime.now());
             ajouterHistoriqueSysteme(facture, cible, "Clôture mensuelle automatique — "
                     + (versDistrict ? "envoi au district (0-5 ans)" : "envoi au service régional"));
@@ -670,13 +716,13 @@ public class FactureStructureService {
         return brouillons.size();
     }
 
-    /** Service Régional : ENVOYEE -> VALIDEE_SR. */
+    /** Service Régional ou Contrôleur : ENVOYEE -> VALIDEE_SR. */
     @Transactional
     public FactureStructure valider(String id, String commentaire) {
         FactureStructure facture = getById(id);
         User user = getCurrentUser();
-        if (user.getRole() != Role.SERVICE_REGIONAL) {
-            throw new ForbiddenException("Seul le service régional peut valider une facture de structure");
+        if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.CONTROLEUR) {
+            throw new ForbiddenException("Seul le service régional ou le contrôleur peut valider une facture de structure");
         }
         if (facture.getStatut() != StatutFacture.ENVOYEE) {
             throw new BusinessException("Seules les factures reçues (envoyées) peuvent être validées");
@@ -688,13 +734,35 @@ public class FactureStructureService {
         return factureRepository.save(facture);
     }
 
-    /** Service Régional : ENVOYEE -> REJETEE_SR (motif obligatoire, renvoyée à la structure). */
+    /** Attribue au contrôleur actif le moins chargé une facture régionale non encore assignée. */
+    @Transactional
+    public FactureStructure assignerAutomatiquement(String id) {
+        User user = getCurrentUser();
+        if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.ADMIN) {
+            throw new ForbiddenException("Seul le service régional peut répartir les factures");
+        }
+        FactureStructure facture = factureRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Facture non trouvée"));
+        if (user.getRole() == Role.SERVICE_REGIONAL
+                && !java.util.Objects.equals(facture.getRegionId(), user.getRegionId())) {
+            throw new ForbiddenException("Cette facture n'appartient pas à votre région");
+        }
+        if (facture.getStatut() != StatutFacture.ENVOYEE && facture.getStatut() != StatutFacture.A_TRAITER) {
+            throw new BusinessException("Seules les factures en attente de traitement peuvent être assignées");
+        }
+
+        assignerControleurAutomatique(facture);
+        facture.setUpdatedAt(LocalDateTime.now());
+        return factureRepository.save(facture);
+    }
+
+    /** Service Régional ou Contrôleur : ENVOYEE -> REJETEE_SR (motif obligatoire, renvoyée à la structure). */
     @Transactional
     public FactureStructure rejeter(String id, String motif) {
         FactureStructure facture = getById(id);
         User user = getCurrentUser();
-        if (user.getRole() != Role.SERVICE_REGIONAL) {
-            throw new ForbiddenException("Seul le service régional peut rejeter une facture de structure");
+        if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.CONTROLEUR) {
+            throw new ForbiddenException("Seul le service régional ou le contrôleur peut rejeter une facture de structure");
         }
         if (facture.getStatut() != StatutFacture.ENVOYEE) {
             throw new BusinessException("Seules les factures reçues peuvent être rejetées");
@@ -724,6 +792,7 @@ public class FactureStructureService {
             throw new BusinessException("Seules les factures soumises au centre de santé peuvent être validées");
         }
         facture.setStatut(StatutFacture.ENVOYEE);
+        assignerControleurAutomatique(facture);
         facture.setUpdatedAt(LocalDateTime.now());
         ajouterHistorique(facture, user, StatutFacture.ENVOYEE,
                 (commentaire != null && !commentaire.isBlank()) ? commentaire : "Validée par le centre de santé et transmise au SR");
@@ -1065,4 +1134,61 @@ public class FactureStructureService {
                 .build();
         facture.getHistorique().add(action);
     }
+
+    /**
+     * Assigne automatiquement la facture à un contrôleur actif du SR
+     * selon une répartition équitable de la charge de travail (Section 3).
+     */
+    private void assignerControleurAutomatique(FactureStructure facture) {
+        String regionId = facture.getRegionId();
+        List<User> controleurs = regionId != null 
+                ? userRepository.findByRoleAndRegionId(Role.CONTROLEUR, regionId)
+                : userRepository.findByRole(Role.CONTROLEUR);
+        
+        if (controleurs.isEmpty()) {
+            controleurs = userRepository.findByRole(Role.CONTROLEUR);
+        }
+        if (controleurs.isEmpty() && regionId != null) {
+            controleurs = userRepository.findByRoleAndRegionId(Role.SERVICE_REGIONAL, regionId);
+        }
+        if (controleurs.isEmpty()) {
+            controleurs = userRepository.findByRole(Role.SERVICE_REGIONAL);
+        }
+        
+        List<User> actifs = controleurs.stream()
+                .filter(User::isActif)
+                .collect(Collectors.toList());
+        
+        if (actifs.isEmpty()) {
+            return;
+        }
+
+        // Si la facture a déjà un contrôleur assigné et qu'il est toujours actif (resoumission après rejet),
+        // on conserve l'assignation au même contrôleur
+        if (facture.getControleurId() != null) {
+            boolean toujoursActif = actifs.stream().anyMatch(c -> c.getId().equals(facture.getControleurId()));
+            if (toujoursActif) {
+                facture.setDateAssignation(LocalDateTime.now());
+                return;
+            }
+        }
+
+        // Trouver le contrôleur ayant la charge active minimale
+        User controleurChoisi = actifs.get(0);
+        long minCharge = Long.MAX_VALUE;
+
+        for (User c : actifs) {
+            long charge = factureRepository.countByControleurIdAndStatutIn(c.getId(),
+                    List.of(StatutFacture.ENVOYEE, StatutFacture.A_TRAITER, StatutFacture.EN_COURS_SR));
+            if (charge < minCharge) {
+                minCharge = charge;
+                controleurChoisi = c;
+            }
+        }
+
+        facture.setControleurId(controleurChoisi.getId());
+        facture.setControleurNom(controleurChoisi.getPrenom() + " " + controleurChoisi.getNom());
+        facture.setDateAssignation(LocalDateTime.now());
+    }
+
 }

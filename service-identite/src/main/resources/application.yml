@@ -33,9 +33,6 @@ spring:
       max-request-size: ${MAX_REQUEST_SIZE:10MB}
 
 app:
-  # Jeu de démonstration (district, centre et postes fictifs) posé sur une base VIDE.
-  # En production : APP_DONNEES_DEMO=false. Régions et compte administrateur restent créés.
-  donnees-demo: ${APP_DONNEES_DEMO:true}
   admin:
     # Mot de passe du compte admin@sencsu.sn créé sur une base VIDE (changement imposé à la
     # première connexion). Le défaut est public : le fixer en production.

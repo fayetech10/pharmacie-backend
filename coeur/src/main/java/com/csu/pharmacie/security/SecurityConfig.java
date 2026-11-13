@@ -82,7 +82,7 @@ public class SecurityConfig {
                       // DOIT précéder la règle générale /api/users/**.
                       .requestMatchers(antMatcher(HttpMethod.GET, "/api/users/*/parametrage")).authenticated()
                       .requestMatchers(antMatcher(HttpMethod.PUT, "/api/users/parametrage")).hasAnyRole("BCSU", "ADMIN")
-                      .requestMatchers(antMatcher("/api/users/**")).hasAnyRole("ADMIN", "SERVICE_REGIONAL")
+                      .requestMatchers(antMatcher("/api/users/**")).hasAnyRole("ADMIN", "SERVICE_REGIONAL", "CONTROLEUR")
                       // Exports PDF des identifiants (sélection d'ids en POST) : mêmes rôles que les exports
                       // Excel plus bas. DOIVENT précéder les règles POST générales des pharmacies et des
                       // structures, qui écarteraient le Service Central.
@@ -120,8 +120,8 @@ public class SecurityConfig {
                       .requestMatchers(antMatcher(HttpMethod.DELETE, "/api/structures-sanitaires/**")).hasAnyRole("SERVICE_REGIONAL", "ADMIN")
                       // Feuilles de soins : délivrance (BCSU), prise en charge (structure), annulation (BCSU) ; contrôle fin en service.
                       .requestMatchers(antMatcher(HttpMethod.POST, "/api/feuilles-soins/**")).hasAnyRole("BCSU", "STRUCTURE_SANITAIRE", "ADMIN")
-                      // Facturation des structures : création/envoi (structure) + validation/rejet (SR) ; contrôle fin en service.
-                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/factures-structure/**")).hasAnyRole("STRUCTURE_SANITAIRE", "SERVICE_REGIONAL", "ADMIN")
+                      // Facturation des structures : création/envoi (structure) + validation/rejet (SR, Contrôleur) ; contrôle fin en service.
+                      .requestMatchers(antMatcher(HttpMethod.POST, "/api/factures-structure/**")).hasAnyRole("STRUCTURE_SANITAIRE", "SERVICE_REGIONAL", "CONTROLEUR", "ADMIN")
                       .requestMatchers(antMatcher(HttpMethod.PUT, "/api/factures-structure/**")).hasAnyRole("STRUCTURE_SANITAIRE", "ADMIN")
                       // Purge des brouillons depuis le paramétrage des structures : ouverte au SR
                       // (déclarée avant la règle générale, plus spécifique d'abord).

@@ -58,7 +58,9 @@ public class UserService {
     public List<User> getAllUsers() {
         User current = getCurrentUser();
         if (current.getRole() == Role.SERVICE_REGIONAL) {
-            return userRepository.findByRoleAndRegionId(Role.BCSU, current.getRegionId());
+            return userRepository.findAll().stream()
+                    .filter(u -> current.getRegionId() == null || current.getRegionId().equals(u.getRegionId()))
+                    .toList();
         }
         return userRepository.findAll();
     }
@@ -68,7 +70,8 @@ public class UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Utilisateur non trouvé"));
         if (current.getRole() == Role.SERVICE_REGIONAL) {
-            if (!current.getRegionId().equals(user.getRegionId()) || user.getRole() != Role.BCSU) {
+            if ((current.getRegionId() != null && !current.getRegionId().equals(user.getRegionId())) 
+                    || (user.getRole() != Role.BCSU && user.getRole() != Role.CONTROLEUR)) {
                 throw new com.csu.pharmacie.exception.ForbiddenException("Accès refusé");
             }
         }
@@ -87,8 +90,8 @@ public class UserService {
     public CompteCree createUser(UserRequest request) {
         User current = getCurrentUser();
         if (current.getRole() == Role.SERVICE_REGIONAL) {
-            if (request.getRole() != Role.BCSU) {
-                throw new com.csu.pharmacie.exception.ForbiddenException("Vous ne pouvez créer que des agents BCSU");
+            if (request.getRole() != Role.BCSU && request.getRole() != Role.CONTROLEUR) {
+                throw new com.csu.pharmacie.exception.ForbiddenException("Vous ne pouvez créer que des agents BCSU ou Contrôleurs");
             }
             request.setRegionId(current.getRegionId());
         }
@@ -233,11 +236,12 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("Utilisateur non trouvé"));
         
         if (current.getRole() == Role.SERVICE_REGIONAL) {
-            if (!current.getRegionId().equals(user.getRegionId()) || user.getRole() != Role.BCSU) {
+            if ((current.getRegionId() != null && !current.getRegionId().equals(user.getRegionId())) 
+                    || (user.getRole() != Role.BCSU && user.getRole() != Role.CONTROLEUR)) {
                 throw new com.csu.pharmacie.exception.ForbiddenException("Accès refusé");
             }
-            if (request.getRole() != Role.BCSU) {
-                throw new com.csu.pharmacie.exception.ForbiddenException("Vous ne pouvez modifier que des agents BCSU");
+            if (request.getRole() != Role.BCSU && request.getRole() != Role.CONTROLEUR) {
+                throw new com.csu.pharmacie.exception.ForbiddenException("Vous ne pouvez modifier que des agents BCSU ou Contrôleurs");
             }
             request.setRegionId(current.getRegionId());
         }
@@ -279,7 +283,8 @@ public class UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Utilisateur non trouvé"));
         if (current.getRole() == Role.SERVICE_REGIONAL) {
-            if (!current.getRegionId().equals(user.getRegionId()) || user.getRole() != Role.BCSU) {
+            if ((current.getRegionId() != null && !current.getRegionId().equals(user.getRegionId())) 
+                    || (user.getRole() != Role.BCSU && user.getRole() != Role.CONTROLEUR)) {
                 throw new com.csu.pharmacie.exception.ForbiddenException("Accès refusé");
             }
         }

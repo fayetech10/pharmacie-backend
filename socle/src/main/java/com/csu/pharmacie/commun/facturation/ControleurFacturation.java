@@ -45,6 +45,14 @@ public abstract class ControleurFacturation {
         return service().mesFactures(mois, annee, regime, statut);
     }
 
+    /** Résumé agrégé (sans identité patient) des saisies, y compris les brouillons. */
+    @GetMapping("/suivi-saisies")
+    public List<SuiviSaisieFacture> suiviSaisies(@RequestParam(required = false) Integer mois,
+                                                @RequestParam Integer annee,
+                                                @RequestParam(required = false) Integer trimestre) {
+        return service().suiviSaisies(mois, annee, trimestre);
+    }
+
     /** Charge utile minimale pour les pastilles de notification du menu. */
     @GetMapping("/statuts")
     public List<Map<String, Object>> statuts() {

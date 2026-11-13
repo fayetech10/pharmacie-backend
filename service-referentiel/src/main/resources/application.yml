@@ -33,9 +33,6 @@ spring:
       max-request-size: ${MAX_REQUEST_SIZE:10MB}
 
 app:
-  # Référentiel de démonstration (prestations aux prix indicatifs) posé sur une base VIDE.
-  # En production : APP_DONNEES_DEMO=false, puis importer le référentiel officiel.
-  donnees-demo: ${APP_DONNEES_DEMO:true}
   jwt:
     # DOIT être identique sur tous les services : c'est ce secret partagé qui permet à
     # chacun de valider localement un jeton émis par service-identite.

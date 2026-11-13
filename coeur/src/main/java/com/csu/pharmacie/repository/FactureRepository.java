@@ -14,6 +14,9 @@ import java.util.stream.Stream;
 
 @Repository
 public interface FactureRepository extends JpaRepository<Facture, String> {
+    long countByControleurIdAndStatutNot(String controleurId, StatutFacture statut);
+    long countByControleurIdAndStatutIn(String controleurId, java.util.Collection<StatutFacture> statuts);
+    List<Facture> findByControleurId(String controleurId);
     List<Facture> findByPharmacieId(String pharmacieId);
     List<Facture> findByRegionId(String regionId);
     List<Facture> findByStatut(StatutFacture statut);

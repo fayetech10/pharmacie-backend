@@ -25,6 +25,8 @@ public enum Role {
     POSTE_SANTE,
     /** Agent d'un centre de santé / EPS — facture et valide les factures de ses postes. */
     CENTRE_SANTE,
+    /** Contrôleur SR — contrôle les factures qui lui sont assignées. */
+    CONTROLEUR,
     /** Rôle générique historique — résolu à la connexion via {@link #effectif}. */
     STRUCTURE_SANITAIRE;
 

@@ -58,6 +58,9 @@ public class Facture {
     private List<HistoriqueAction> historique = new ArrayList<>();
 
     private String commentaireRejet;
+    private String controleurId;
+    private String controleurNom;
+    private LocalDateTime dateAssignation;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String createdBy;

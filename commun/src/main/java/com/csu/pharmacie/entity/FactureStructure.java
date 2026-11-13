@@ -120,7 +120,13 @@ public class FactureStructure {
     @Column(columnDefinition = "jsonb")
     private List<HistoriqueDossier> historique = new ArrayList<>();
 
+    /** Peut agréger le motif de nombreux patients rejetés sur une facture. */
+    @Column(columnDefinition = "text")
     private String commentaireRejet;
+
+    private String controleurId;
+    private String controleurNom;
+    private LocalDateTime dateAssignation;
 
     /**
      * Rapport du dernier import de fin de mois (centres et EPS), réaffichable. Hors du JSON de

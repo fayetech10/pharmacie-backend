@@ -134,6 +134,29 @@ public class ServiceFacturation {
     }
 
     /**
+     * Résumé des saisies d'une période pour le suivi régional. Les brouillons restent
+     * masqués dans la liste générale des factures, mais leur avancement doit être visible.
+     * Cette route ne renvoie aucune donnée patient.
+     */
+    public List<SuiviSaisieFacture> suiviSaisies(Integer mois, int annee, Integer trimestre) {
+        return facturesDuPerimetre(true).stream()
+                .filter(f -> f.getAnnee() == annee)
+                .filter(f -> mois == null || f.getMois() == mois)
+                .filter(f -> trimestre == null || Math.ceil(f.getMois() / 3.0) == trimestre)
+                .map(f -> new SuiviSaisieFacture(
+                        f.getStructureSanitaireId(),
+                        f.getMois(),
+                        f.getAnnee(),
+                        f.getRegime(),
+                        f.getStatut(),
+                        f.getDossiers() != null && !f.getDossiers().isEmpty()
+                                ? f.getDossiers().size() : f.getNombreBeneficiaires(),
+                        f.getMontantTotal(),
+                        f.getMontantTotalSencsu()))
+                .toList();
+    }
+
+    /**
      * Factures visibles par l'appelant, selon SON périmètre.
      *
      * <p>Une structure voit les siennes. Un superviseur n'en a aucune : il voit celles de son
@@ -149,6 +172,10 @@ public class ServiceFacturation {
      * la structure qui les saisit, exactement comme dans {@link #facturesDesPostes}.</p>
      */
     private List<FactureStructure> facturesDuPerimetre() {
+        return facturesDuPerimetre(false);
+    }
+
+    private List<FactureStructure> facturesDuPerimetre(boolean inclureBrouillons) {
         UtilisateurAuthentifie utilisateur = ContexteUtilisateur.courant();
         Role role = utilisateur.getRole();
 
@@ -161,13 +188,14 @@ public class ServiceFacturation {
             // Sans région sur le compte, rien — et surtout pas la vue nationale.
             String region = utilisateur.getRegionId();
             factures = region == null || region.isBlank() ? List.of() : depot.findByRegionId(region);
-        } else if (role == Role.DISTRICT && utilisateur.getDistrictId() != null) {
-            factures = depot.findByDistrictId(utilisateur.getDistrictId());
+        } else if (role == Role.DISTRICT) {
+            String district = utilisateur.getDistrictId();
+            factures = district == null || district.isBlank() ? List.of() : depot.findByDistrictId(district);
         } else {
             // Service central et administrateur : pas de périmètre géographique.
             factures = depot.findAll();
         }
-        return factures.stream()
+        return inclureBrouillons ? factures : factures.stream()
                 .filter(f -> f.getStatut() != null && f.getStatut() != StatutFacture.BROUILLON)
                 .toList();
     }

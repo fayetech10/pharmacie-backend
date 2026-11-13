@@ -3,9 +3,12 @@ package com.csu.pharmacie.dto;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Data
@@ -52,4 +55,13 @@ public class FactureStructureRequest {
 
     @Valid
     private List<DocumentComplementaireDto> documentsComplementaires;
+
+    /** Date de prise en charge choisie dans l'écran de saisie. */
+    private LocalDate datePriseEnCharge;
+
+    /** Période explicite, utilisée par les écrans qui ouvrent une facture donnée. */
+    @Min(value = 1, message = "Le mois de facturation doit être compris entre 1 et 12")
+    @Max(value = 12, message = "Le mois de facturation doit être compris entre 1 et 12")
+    private Integer mois;
+    private Integer annee;
 }

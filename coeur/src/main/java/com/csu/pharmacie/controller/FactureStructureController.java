@@ -224,6 +224,11 @@ public class FactureStructureController {
         return ResponseEntity.ok(factureService.valider(id, request != null ? request.getCommentaire() : null));
     }
 
+    @PostMapping("/{id}/assigner-automatiquement")
+    public ResponseEntity<FactureStructure> assignerAutomatiquement(@PathVariable String id) {
+        return ResponseEntity.ok(factureService.assignerAutomatiquement(id));
+    }
+
     @PostMapping("/{id}/rejeter")
     public ResponseEntity<FactureStructure> rejeter(@PathVariable String id, @RequestBody ValidationRequest request) {
         return ResponseEntity.ok(factureService.rejeter(id, request != null ? request.getCommentaire() : null));

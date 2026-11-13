@@ -63,6 +63,19 @@ public class FactureService {
                 return factureRepository.findByPharmacieIdFiltre(user.getPharmacieId(), m, a);
             case SERVICE_REGIONAL:
                 return factureRepository.findByRegionIdFiltre(user.getRegionId(), m, a);
+            case CONTROLEUR:
+                // Le contrôleur consulte ses factures nominatives
+                List<Facture> facturesControleur = factureRepository.findByControleurId(user.getId());
+                if (facturesControleur.isEmpty() && user.getRegionId() != null) {
+                    return factureRepository.findByRegionIdFiltre(user.getRegionId(), m, a);
+                }
+                if (m > 0 || a > 0) {
+                    facturesControleur = facturesControleur.stream()
+                            .filter(f -> (m == 0 || f.getMois() == m))
+                            .filter(f -> (a == 0 || f.getAnnee() == a))
+                            .collect(Collectors.toList());
+                }
+                return facturesControleur;
             case SERVICE_CENTRAL:
             case ADMIN:
                 return factureRepository.findAllFiltre(m, a);
@@ -87,6 +100,11 @@ public class FactureService {
                 return factureRepository.findStatutsByPharmacie(user.getPharmacieId());
             case SERVICE_REGIONAL:
                 return factureRepository.findStatutsByRegion(user.getRegionId());
+            case CONTROLEUR:
+                if (user.getRegionId() != null) {
+                    return factureRepository.findStatutsByRegion(user.getRegionId());
+                }
+                return factureRepository.findAllStatuts();
             case SERVICE_CENTRAL:
             case ADMIN:
                 return factureRepository.findAllStatuts();
@@ -497,7 +515,7 @@ public class FactureService {
         String commentaire = request != null ? request.getCommentaire() : null;
         boolean hasComment = commentaire != null && !commentaire.isBlank();
 
-        if (user.getRole() == Role.SERVICE_REGIONAL) {
+        if (user.getRole() == Role.SERVICE_REGIONAL || user.getRole() == Role.CONTROLEUR) {
             if (facture.getStatut() != StatutFacture.ENVOYEE) {
                 throw new BusinessException("Seules les factures reçues (envoyées) peuvent être validées");
             }
@@ -515,6 +533,27 @@ public class FactureService {
         return facture;
     }
 
+    /** Attribue au contrôleur actif le moins chargé une facture régionale non encore assignée. */
+    @Transactional
+    public Facture assignerAutomatiquement(String id) {
+        User user = getCurrentUser();
+        if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.ADMIN) {
+            throw new ForbiddenException("Seul le service régional peut répartir les factures");
+        }
+        Facture facture = getFactureById(id);
+        if (user.getRole() == Role.SERVICE_REGIONAL
+                && !java.util.Objects.equals(facture.getRegionId(), user.getRegionId())) {
+            throw new ForbiddenException("Cette facture n'appartient pas à votre région");
+        }
+        if (facture.getStatut() != StatutFacture.ENVOYEE && facture.getStatut() != StatutFacture.A_TRAITER) {
+            throw new BusinessException("Seules les factures en attente de traitement peuvent être assignées");
+        }
+
+        assignerControleurAutomatique(facture);
+        facture.setUpdatedAt(LocalDateTime.now());
+        return factureRepository.save(facture);
+    }
+
     /**
      * Rejet conscient du niveau :
      * - Service Régional : ENVOYEE -> REJETEE_SR (renvoyée à la pharmacie)
@@ -529,7 +568,7 @@ public class FactureService {
             throw new BusinessException("Le motif de rejet est obligatoire");
         }
 
-        if (user.getRole() == Role.SERVICE_REGIONAL) {
+        if (user.getRole() == Role.SERVICE_REGIONAL || user.getRole() == Role.CONTROLEUR) {
             if (facture.getStatut() != StatutFacture.ENVOYEE) {
                 throw new BusinessException("Seules les factures reçues peuvent être rejetées");
             }
@@ -559,8 +598,8 @@ public class FactureService {
         Facture facture = getFactureById(id);
         User user = getCurrentUser();
 
-        if (user.getRole() != Role.SERVICE_REGIONAL) {
-            throw new ForbiddenException("Seul le service régional peut décider d'une ligne");
+        if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.CONTROLEUR) {
+            throw new ForbiddenException("Seul le service régional ou le contrôleur peut décider d'une ligne");
         }
         if (facture.getStatut() != StatutFacture.ENVOYEE) {
             throw new BusinessException("Seules les factures reçues (envoyées) permettent une décision ligne par ligne");
@@ -613,6 +652,9 @@ public class FactureService {
 
     private void changerStatut(Facture facture, StatutFacture nouveauStatut, User user, String commentaire) {
         facture.setStatut(nouveauStatut);
+        if (nouveauStatut == StatutFacture.ENVOYEE) {
+            assignerControleurAutomatique(facture);
+        }
         facture.setUpdatedAt(LocalDateTime.now());
         ajouterHistorique(facture, user, nouveauStatut, commentaire);
         factureRepository.save(facture);
@@ -891,4 +933,58 @@ public class FactureService {
         return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
     }
+
+    /**
+     * Assigne automatiquement la facture pharmacie à un contrôleur actif du SR
+     * selon une répartition équitable de la charge de travail (Section 3).
+     */
+    private void assignerControleurAutomatique(Facture facture) {
+        String regionId = facture.getRegionId();
+        List<User> controleurs = regionId != null 
+                ? userRepository.findByRoleAndRegionId(Role.CONTROLEUR, regionId)
+                : userRepository.findByRole(Role.CONTROLEUR);
+        
+        if (controleurs.isEmpty()) {
+            controleurs = userRepository.findByRole(Role.CONTROLEUR);
+        }
+        if (controleurs.isEmpty() && regionId != null) {
+            controleurs = userRepository.findByRoleAndRegionId(Role.SERVICE_REGIONAL, regionId);
+        }
+        if (controleurs.isEmpty()) {
+            controleurs = userRepository.findByRole(Role.SERVICE_REGIONAL);
+        }
+        
+        List<User> actifs = controleurs.stream()
+                .filter(User::isActif)
+                .collect(Collectors.toList());
+        
+        if (actifs.isEmpty()) {
+            return;
+        }
+
+        if (facture.getControleurId() != null) {
+            boolean toujoursActif = actifs.stream().anyMatch(c -> c.getId().equals(facture.getControleurId()));
+            if (toujoursActif) {
+                facture.setDateAssignation(LocalDateTime.now());
+                return;
+            }
+        }
+
+        User controleurChoisi = actifs.get(0);
+        long minCharge = Long.MAX_VALUE;
+
+        for (User c : actifs) {
+            long charge = factureRepository.countByControleurIdAndStatutIn(c.getId(),
+                    List.of(StatutFacture.ENVOYEE, StatutFacture.A_TRAITER, StatutFacture.EN_COURS_SR));
+            if (charge < minCharge) {
+                minCharge = charge;
+                controleurChoisi = c;
+            }
+        }
+
+        facture.setControleurId(controleurChoisi.getId());
+        facture.setControleurNom(controleurChoisi.getPrenom() + " " + controleurChoisi.getNom());
+        facture.setDateAssignation(LocalDateTime.now());
+    }
+
 }

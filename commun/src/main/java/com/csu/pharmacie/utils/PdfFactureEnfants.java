@@ -24,10 +24,10 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * « Liste + facture 0-5 ans » d'une structure : une page de garde portrait (la facture : DRS,
- * district, structure, « Facture N°mois/MOIS/année », périodes / patients / prestations /
- * total, montant en lettres, signatures) puis la liste nominative paysage (une ligne par
- * visite, prestations réunies, total patients et prestations).
+ * « Liste + facture » d'une structure : une page de garde portrait (la facture : DRS, district,
+ * structure, « Facture N°mois/MOIS/année », périodes / patients / prestations / total, montant en
+ * lettres, signatures) puis la liste nominative paysage (une ligne par visite, prestations
+ * réunies, totaux par colonne, montant en lettres et signatures).
  *
  * <p>Source unique du document, partagée par le cœur (bouton « Liste + facture (0-5 ans) » d'une
  * facture) et par le service centre (« Situation 0-5 ans » du district, qui enchaîne dans un
@@ -324,7 +324,7 @@ public final class PdfFactureEnfants {
         document.add(signatures(fNormal, 55f));
     }
 
-    /** Liste nominative (paysage) : une ligne par visite, sans montants. */
+    /** Liste nominative (paysage) : une ligne par visite, avec montants hors régime 0-5 ans. */
     private static void listeNominative(Document document, FactureStructure facture, Structure structure,
                                         String dateJour, List<LigneFactureStructure> lignes) throws DocumentException {
         BaseColor csuGreen = new BaseColor(26, 122, 74);   // #1A7A4A : bandeau titre + en-tête du tableau
@@ -449,18 +449,49 @@ public final class PdfFactureEnfants {
             }
             i++;
         }
+        int nbPatients = ColonnesFactureStructure.parPatient(lignes).size();
+        int totalQuantite = lignes.stream().mapToInt(LigneFactureStructure::getQuantite).sum();
+        double totalPrixUnitaire = lignes.stream().mapToDouble(LigneFactureStructure::getPrixUnitaire).sum();
+        double montantSencsu = facture.getMontantTotalSencsu();
+
+        // Ligne de totaux alignée sur les colonnes de prix, quantité et part SEN-CSU.
+        PdfPCell totalLibelle = new PdfPCell(new Phrase(
+                "TOTAL   " + nbPatients + " patient" + (nbPatients > 1 ? "s" : ""), totalFont));
+        totalLibelle.setColspan(avecMontants ? t.getNumberOfColumns() - 3 : t.getNumberOfColumns());
+        totalLibelle.setHorizontalAlignment(Element.ALIGN_LEFT);
+        totalLibelle.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        totalLibelle.setPadding(5f);
+        totalLibelle.setBackgroundColor(new BaseColor(230, 244, 234));
+        totalLibelle.setBorderColor(borderLight);
+        t.addCell(totalLibelle);
+        if (avecMontants) {
+            for (double valeur : new double[]{totalPrixUnitaire, totalQuantite, montantSencsu}) {
+                PdfPCell totalValeur = new PdfPCell(new Phrase(ColonnesFactureStructure.texte(valeur), totalFont));
+                totalValeur.setHorizontalAlignment(Element.ALIGN_RIGHT);
+                totalValeur.setVerticalAlignment(Element.ALIGN_MIDDLE);
+                totalValeur.setPadding(5f);
+                totalValeur.setBackgroundColor(new BaseColor(230, 244, 234));
+                totalValeur.setBorderColor(borderLight);
+                t.addCell(totalValeur);
+            }
+        }
         document.add(t);
 
-        int nbPatients = ColonnesFactureStructure.parPatient(lignes).size();
-        String resume = "TOTAL   " + nbPatients + " patient" + (nbPatients > 1 ? "s" : "")
-                + "   ·   " + lignes.size() + " prestation" + (lignes.size() > 1 ? "s" : "");
-        if (avecMontants) {
-            resume += "   ·   Montant facturé SEN-CSU : "
-                    + ColonnesFactureStructure.texte(facture.getMontantTotalSencsu()) + " FCFA";
+        String enLettres = NombreEnLettres.convertir(Math.round(montantSencsu));
+        if (!enLettres.isEmpty()) {
+            enLettres = Character.toUpperCase(enLettres.charAt(0)) + enLettres.substring(1);
         }
-        Paragraph total = new Paragraph(resume, totalFont);
-        total.setSpacingBefore(10f);
-        document.add(total);
+        String arret = "Arrêté le présent état à la somme de : " + enLettres + " francs CFA ("
+                + ColonnesFactureStructure.texte(montantSencsu) + " FCFA)";
+        PdfPTable arretTable = new PdfPTable(1);
+        arretTable.setWidthPercentage(100);
+        arretTable.setSpacingBefore(10f);
+        PdfPCell arretCell = new PdfPCell(new Phrase(arret, totalFont));
+        arretCell.setBorder(PdfPCell.NO_BORDER);
+        arretCell.setPadding(7f);
+        arretCell.setBackgroundColor(new BaseColor(230, 244, 234));
+        arretTable.addCell(arretCell);
+        document.add(arretTable);
 
         document.add(signatures(fInfo, 30f));
     }
@@ -469,7 +500,7 @@ public final class PdfFactureEnfants {
         PdfPTable sig = new PdfPTable(2);
         sig.setWidthPercentage(100);
         sig.setSpacingBefore(espaceAvant);
-        for (String libelle : new String[]{"Le Secrétaire exécutif du CDS", "Le Responsable de la Structure"}) {
+        for (String libelle : new String[]{"Le Secrétaire exécutif du Comité de Développement Sanitaire", "Le Responsable de la Structure"}) {
             PdfPCell s = new PdfPCell(new Phrase(libelle, police));
             s.setBorder(PdfPCell.NO_BORDER);
             s.setHorizontalAlignment(Element.ALIGN_CENTER);

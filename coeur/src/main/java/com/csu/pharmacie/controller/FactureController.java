@@ -102,6 +102,11 @@ public class FactureController {
         return ResponseEntity.ok(factureService.envoyerFacture(id));
     }
 
+    @PostMapping("/{id}/assigner-automatiquement")
+    public ResponseEntity<Facture> assignerAutomatiquement(@PathVariable String id) {
+        return ResponseEntity.ok(factureService.assignerAutomatiquement(id));
+    }
+
     @PostMapping("/{id}/payer")
     public ResponseEntity<Facture> payerFacture(@PathVariable String id) {
         return ResponseEntity.ok(factureService.payerFacture(id));

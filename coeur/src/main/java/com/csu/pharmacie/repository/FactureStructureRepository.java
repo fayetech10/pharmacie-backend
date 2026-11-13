@@ -12,6 +12,9 @@ import java.util.Optional;
 
 @Repository
 public interface FactureStructureRepository extends JpaRepository<FactureStructure, String> {
+    long countByControleurIdAndStatutNot(String controleurId, com.csu.pharmacie.entity.StatutFacture statut);
+    long countByControleurIdAndStatutIn(String controleurId, java.util.Collection<com.csu.pharmacie.entity.StatutFacture> statuts);
+    List<FactureStructure> findByControleurId(String controleurId);
     Optional<FactureStructure> findByNumero(String numero);
     List<FactureStructure> findByStructureSanitaireId(String structureSanitaireId);
     /** Factures de plusieurs structures en UNE requête (évite un appel par poste rattaché). */

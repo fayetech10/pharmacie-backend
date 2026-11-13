@@ -21,8 +21,11 @@ public enum StatutFacture {
     SOUMISE_CS("Soumise au district"),
     REJETEE_CS("Rejetée par le district"),
     ENVOYEE("Transmise au service régional"),
+    A_TRAITER("À traiter"),
+    EN_COURS_SR("En cours SR"),
     VALIDEE_SR("Validée par le service régional"),
     REJETEE_SR("Rejetée par le service régional"),
+    ENVOYEE_NC("Envoyée au niveau central"),
     VALIDEE_NC("Validée par le niveau central"),
     REJETEE_NC("Rejetée par le niveau central"),
     PAYEE("Payée");
@@ -43,7 +46,7 @@ public enum StatutFacture {
 
     /** Statuts comptabilisés comme « facturé » dans les consolidations et tableaux de bord. */
     public static final Set<StatutFacture> COMPTABILISES =
-            EnumSet.of(SOUMISE_CS, ENVOYEE, VALIDEE_SR, VALIDEE_NC, PAYEE);
+            EnumSet.of(SOUMISE_CS, ENVOYEE, A_TRAITER, EN_COURS_SR, VALIDEE_SR, ENVOYEE_NC, VALIDEE_NC, PAYEE);
 
     public boolean estModifiable() {
         return MODIFIABLES.contains(this);
