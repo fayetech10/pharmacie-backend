@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
 
 /**
  * Contrat HTTP de la facturation d'un point de soins — {@code /api/factures-structure}.
@@ -49,8 +51,9 @@ public abstract class ControleurFacturation {
     @GetMapping("/suivi-saisies")
     public List<SuiviSaisieFacture> suiviSaisies(@RequestParam(required = false) Integer mois,
                                                 @RequestParam Integer annee,
-                                                @RequestParam(required = false) Integer trimestre) {
-        return service().suiviSaisies(mois, annee, trimestre);
+                                                @RequestParam(required = false) Integer trimestre,
+                                                @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate jour) {
+        return service().suiviSaisies(mois, annee, trimestre, jour);
     }
 
     /** Charge utile minimale pour les pastilles de notification du menu. */

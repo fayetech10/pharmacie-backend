@@ -138,12 +138,16 @@ public class ServiceFacturation {
      * masqués dans la liste générale des factures, mais leur avancement doit être visible.
      * Cette route ne renvoie aucune donnée patient.
      */
-    public List<SuiviSaisieFacture> suiviSaisies(Integer mois, int annee, Integer trimestre) {
+    public List<SuiviSaisieFacture> suiviSaisies(Integer mois, int annee, Integer trimestre, LocalDate jour) {
         return facturesDuPerimetre(true).stream()
                 .filter(f -> f.getAnnee() == annee)
                 .filter(f -> mois == null || f.getMois() == mois)
                 .filter(f -> trimestre == null || Math.ceil(f.getMois() / 3.0) == trimestre)
+                .filter(f -> jour == null || (f.getUpdatedAt() != null && f.getUpdatedAt().toLocalDate().equals(jour))
+                        || (f.getUpdatedAt() == null && f.getCreatedAt() != null && f.getCreatedAt().toLocalDate().equals(jour)))
                 .map(f -> new SuiviSaisieFacture(
+                        f.getId(),
+                        f.getNumero(),
                         f.getStructureSanitaireId(),
                         f.getMois(),
                         f.getAnnee(),
@@ -152,7 +156,8 @@ public class ServiceFacturation {
                         f.getDossiers() != null && !f.getDossiers().isEmpty()
                                 ? f.getDossiers().size() : f.getNombreBeneficiaires(),
                         f.getMontantTotal(),
-                        f.getMontantTotalSencsu()))
+                        f.getMontantTotalSencsu(),
+                        f.getUpdatedAt() != null ? f.getUpdatedAt() : f.getCreatedAt()))
                 .toList();
     }
 
