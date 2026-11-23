@@ -11,6 +11,7 @@ import com.csu.pharmacie.entity.Regime;
 import com.csu.pharmacie.entity.VerificationCarte;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,6 +43,8 @@ public class RequeteFacturation {
      * change plus quand le dossier est complété ensuite.
      */
     private LocalDate datePriseEnCharge;
+    /** Heure réelle de la visite / du rendez-vous, et non l'heure d'enregistrement du dossier. */
+    private LocalTime heurePriseEnCharge;
 
     // ----- Bénéficiaire -----
     private String patientId;
@@ -118,6 +121,7 @@ public class RequeteFacturation {
                 .numeroCni(nettoyer(patientNumeroCni))
                 .numeroRegistre(nettoyer(numeroRegistre))
                 .datePriseEnCharge(datePriseEnCharge)
+                .heurePriseEnCharge(heurePriseEnCharge)
                 .verificationCarte(VerificationCarte.normaliser(verificationCarte))
                 .pieces(new ArrayList<>())
                 .build();
@@ -196,6 +200,9 @@ public class RequeteFacturation {
             }
             if (ligne.getDatePriseEnCharge() == null) {
                 ligne.setDatePriseEnCharge(datePriseEnCharge != null ? datePriseEnCharge : LocalDate.now());
+            }
+            if (ligne.getHeurePriseEnCharge() == null) {
+                ligne.setHeurePriseEnCharge(heurePriseEnCharge);
             }
             completees.add(ligne);
         }

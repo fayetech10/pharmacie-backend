@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 @Data
@@ -58,6 +59,9 @@ public class FactureStructureRequest {
 
     /** Date de prise en charge choisie dans l'écran de saisie. */
     private LocalDate datePriseEnCharge;
+
+    /** Heure réelle de prise en charge / du rendez-vous. */
+    private LocalTime heurePriseEnCharge;
 
     /** Période explicite, utilisée par les écrans qui ouvrent une facture donnée. */
     @Min(value = 1, message = "Le mois de facturation doit être compris entre 1 et 12")

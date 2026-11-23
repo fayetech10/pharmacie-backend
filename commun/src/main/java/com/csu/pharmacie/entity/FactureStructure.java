@@ -36,7 +36,11 @@ import java.util.List;
 @Table(name = "factures_structure", indexes = {
         @Index(name = "idx_fs_numero", columnList = "numero", unique = true),
         @Index(name = "idx_fs_structure", columnList = "structure_sanitaire_id"),
-        @Index(name = "idx_fs_region", columnList = "region_id")
+        @Index(name = "idx_fs_region", columnList = "region_id"),
+        @Index(name = "idx_fs_annee_mois", columnList = "annee, mois"),
+        @Index(name = "idx_fs_statut", columnList = "statut"),
+        @Index(name = "idx_fs_structure_annee", columnList = "structure_sanitaire_id, annee, mois"),
+        @Index(name = "idx_fs_district", columnList = "district_id")
 })
 public class FactureStructure {
     @Id

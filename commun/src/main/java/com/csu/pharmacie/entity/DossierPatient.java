@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -64,6 +65,8 @@ public class DossierPatient {
      * la ligne de facture que le fichier de fin de mois viendra compléter.
      */
     private LocalDate datePriseEnCharge;
+    /** Heure réelle de la visite / du rendez-vous, indépendante de l'heure de saisie. */
+    private LocalTime heurePriseEnCharge;
     /** Identifiant du régime, normalisé (cf. {@code CleRapprochement}). */
     private String cleRapprochement;
 

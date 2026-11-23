@@ -502,6 +502,7 @@ public class ServiceFacturation {
         // retrouve quand on le complète, même le lendemain.
         dossier.setDatePriseEnCharge(requete.getDatePriseEnCharge() != null ? requete.getDatePriseEnCharge()
                 : nouvelles.isEmpty() ? aujourdhui : nouvelles.get(0).getDatePriseEnCharge());
+        dossier.setHeurePriseEnCharge(requete.getHeurePriseEnCharge());
         dossier.setPieces(typesFournis(requete.getPieces()));
         if (photoCarte != null && !photoCarte.isBlank()) {
             // Déclarée avant l'enregistrement de la facture, qui porte la liste des pièces ;
@@ -586,6 +587,9 @@ public class ServiceFacturation {
         }
         if (saisi.getAdresse() != null) {
             dossier.setAdresse(saisi.getAdresse());
+        }
+        if (dossier.getHeurePriseEnCharge() == null && saisi.getHeurePriseEnCharge() != null) {
+            dossier.setHeurePriseEnCharge(saisi.getHeurePriseEnCharge());
         }
         requete.appliquerIdentite(dossier);
 
@@ -952,6 +956,9 @@ public class ServiceFacturation {
             if (requete.getLignes() != null) {
                 requete.getLignes().forEach(ligne -> ligne.setDatePriseEnCharge(dateVisite));
             }
+        }
+        if (dossier.getHeurePriseEnCharge() == null && saisi.getHeurePriseEnCharge() != null) {
+            dossier.setHeurePriseEnCharge(saisi.getHeurePriseEnCharge());
         }
         List<LigneFactureStructure> nouvelles = requete.lignesCompletees();
         nouvelles.forEach(ligne -> ligne.setDossierId(dossierId));

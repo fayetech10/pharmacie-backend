@@ -308,6 +308,9 @@ public class FactureStructureService {
         
         // On enrichit chaque ligne avec les métadonnées du patient et de la lettre de garantie
         for (LigneFactureStructure ligne : nouvellesLignes) {
+            if (ligne.getHeurePriseEnCharge() == null) {
+                ligne.setHeurePriseEnCharge(request.getHeurePriseEnCharge());
+            }
             if (lettre != null) {
                 ligne.setLettreGarantieId(lettre.getId());
                 ligne.setLettreGarantieNumero(lettre.getNumero());
@@ -467,6 +470,15 @@ public class FactureStructureService {
             entity.setPatientAdresse(request.getPatientAdresse());
             entity.setPatientMatricule(request.getPatientMatricule());
             entity.setPatientNumeroCni(request.getPatientNumeroCni());
+            if (entity.getHeurePriseEnCharge() == null) {
+                entity.setHeurePriseEnCharge(request.getHeurePriseEnCharge() != null
+                        ? request.getHeurePriseEnCharge()
+                        : facture.getLignes().stream()
+                                .filter(l -> l.getDesignation().equals(entity.getDesignation()))
+                                .map(LigneFactureStructure::getHeurePriseEnCharge)
+                                .filter(java.util.Objects::nonNull)
+                                .findFirst().orElse(null));
+            }
             entity.setService(request.getService());
             entity.setNumeroRegistre(request.getNumeroRegistre());
             entity.setIrcIra(request.getIrcIra());
@@ -901,6 +913,7 @@ public class FactureStructureService {
         }
         if (dto.getCodeActe() != null) ligne.setCodeActe(dto.getCodeActe());
         if (dto.getDatePriseEnCharge() != null) ligne.setDatePriseEnCharge(dto.getDatePriseEnCharge());
+        if (dto.getHeurePriseEnCharge() != null) ligne.setHeurePriseEnCharge(dto.getHeurePriseEnCharge());
         ligne.setQuantite(dto.getQuantite() > 0 ? dto.getQuantite() : ligne.getQuantite());
         double puDemande = dto.getPrixUnitaire() >= 0 ? dto.getPrixUnitaire() : ligne.getPrixUnitaire();
         ligne.setPrixUnitaire(prixUnitaireEffectif(estPosteDeSante(facture), facture.getRegime(), puDemande));
@@ -1052,6 +1065,7 @@ public class FactureStructureService {
                     .designation(dto.getDesignation())
                     .codeActe(dto.getCodeActe())
                     .datePriseEnCharge(dto.getDatePriseEnCharge())
+                    .heurePriseEnCharge(dto.getHeurePriseEnCharge())
                     .quantite(dto.getQuantite())
                     .prixUnitaire(prixUnitaire)
                     .montant(montant)

@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Data
 public class LigneFactureStructureDto {
@@ -16,6 +17,8 @@ public class LigneFactureStructureDto {
 
     @NotNull(message = "La date de prise en charge est obligatoire")
     private LocalDate datePriseEnCharge;
+
+    private LocalTime heurePriseEnCharge;
 
     @Min(value = 1, message = "La quantité doit être supérieure à 0")
     private int quantite;

@@ -21,7 +21,9 @@ import java.time.LocalDateTime;
 @Table(name = "structures_sanitaires", indexes = {
         @Index(name = "idx_structure_region", columnList = "region_id"),
         @Index(name = "idx_structure_bcsu", columnList = "bcsu_id"),
-        @Index(name = "idx_structure_rattachement", columnList = "structure_rattachement_id")
+        @Index(name = "idx_structure_rattachement", columnList = "structure_rattachement_id"),
+        @Index(name = "idx_structure_district", columnList = "district_id"),
+        @Index(name = "idx_structure_actif", columnList = "actif")
 })
 public class StructureSanitaire {
     @Id

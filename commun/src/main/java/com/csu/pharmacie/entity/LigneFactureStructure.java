@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 /**
  * Ligne de prestation d'une facture de structure sanitaire (modèle SITFAC).
@@ -47,6 +48,8 @@ public class LigneFactureStructure {
     private String designation;    // Acte / prestation
     private String codeActe;       // Code SITFAC (optionnel)
     private LocalDate datePriseEnCharge;
+    /** Heure réelle de la visite, recopiée sur les lignes pour les factures historiques sans dossier. */
+    private LocalTime heurePriseEnCharge;
     private int quantite;
     private double prixUnitaire;
     private double montant;         // quantite * prixUnitaire (recalculé en service)
