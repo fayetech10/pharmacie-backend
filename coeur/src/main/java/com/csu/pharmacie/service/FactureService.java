@@ -64,11 +64,8 @@ public class FactureService {
             case SERVICE_REGIONAL:
                 return factureRepository.findByRegionIdFiltre(user.getRegionId(), m, a);
             case CONTROLEUR:
-                // Le contrôleur consulte ses factures nominatives
+                // Le contrôleur ne voit que ses factures nominativement assignées.
                 List<Facture> facturesControleur = factureRepository.findByControleurId(user.getId());
-                if (facturesControleur.isEmpty() && user.getRegionId() != null) {
-                    return factureRepository.findByRegionIdFiltre(user.getRegionId(), m, a);
-                }
                 if (m > 0 || a > 0) {
                     facturesControleur = facturesControleur.stream()
                             .filter(f -> (m == 0 || f.getMois() == m))
@@ -191,6 +188,7 @@ public class FactureService {
         if (user.getRole() == Role.SERVICE_REGIONAL && !java.util.Objects.equals(facture.getRegionId(), user.getRegionId())) {
             throw new ForbiddenException("Accès refusé");
         }
+        if (user.getRole() == Role.CONTROLEUR) verifierFactureAssignee(facture, user);
         
         return facture;
     }
@@ -516,8 +514,15 @@ public class FactureService {
         boolean hasComment = commentaire != null && !commentaire.isBlank();
 
         if (user.getRole() == Role.SERVICE_REGIONAL || user.getRole() == Role.CONTROLEUR) {
+            if (user.getRole() == Role.CONTROLEUR) verifierFactureAssignee(facture, user);
             if (facture.getStatut() != StatutFacture.ENVOYEE) {
                 throw new BusinessException("Seules les factures reçues (envoyées) peuvent être validées");
+            }
+            if (user.getRole() == Role.CONTROLEUR && (facture.getLignes() == null
+                    || facture.getLignes().isEmpty()
+                    || facture.getLignes().stream().anyMatch(l -> l.getStatutLigne() == null
+                            || l.getStatutLigne() == StatutLigne.EN_ATTENTE))) {
+                throw new BusinessException("Décidez chaque prestation avant de valider cette facture");
             }
             changerStatut(facture, StatutFacture.VALIDEE_SR, user,
                     hasComment ? commentaire : "Validée et transmise au niveau central");
@@ -569,6 +574,7 @@ public class FactureService {
         }
 
         if (user.getRole() == Role.SERVICE_REGIONAL || user.getRole() == Role.CONTROLEUR) {
+            if (user.getRole() == Role.CONTROLEUR) verifierFactureAssignee(facture, user);
             if (facture.getStatut() != StatutFacture.ENVOYEE) {
                 throw new BusinessException("Seules les factures reçues peuvent être rejetées");
             }
@@ -601,6 +607,7 @@ public class FactureService {
         if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.CONTROLEUR) {
             throw new ForbiddenException("Seul le service régional ou le contrôleur peut décider d'une ligne");
         }
+        if (user.getRole() == Role.CONTROLEUR) verifierFactureAssignee(facture, user);
         if (facture.getStatut() != StatutFacture.ENVOYEE) {
             throw new BusinessException("Seules les factures reçues (envoyées) permettent une décision ligne par ligne");
         }
@@ -625,6 +632,12 @@ public class FactureService {
 
         facture.setUpdatedAt(LocalDateTime.now());
         return factureRepository.save(facture);
+    }
+
+    private void verifierFactureAssignee(Facture facture, User user) {
+        if (!java.util.Objects.equals(facture.getControleurId(), user.getId())) {
+            throw new ForbiddenException("Cette facture ne vous est pas assignée");
+        }
     }
 
     @Transactional
@@ -944,21 +957,12 @@ public class FactureService {
                 ? userRepository.findByRoleAndRegionId(Role.CONTROLEUR, regionId)
                 : userRepository.findByRole(Role.CONTROLEUR);
         
-        if (controleurs.isEmpty()) {
-            controleurs = userRepository.findByRole(Role.CONTROLEUR);
-        }
-        if (controleurs.isEmpty() && regionId != null) {
-            controleurs = userRepository.findByRoleAndRegionId(Role.SERVICE_REGIONAL, regionId);
-        }
-        if (controleurs.isEmpty()) {
-            controleurs = userRepository.findByRole(Role.SERVICE_REGIONAL);
-        }
-        
         List<User> actifs = controleurs.stream()
                 .filter(User::isActif)
                 .collect(Collectors.toList());
         
         if (actifs.isEmpty()) {
+            nettoyerAssignationControleurInvalide(facture, regionId);
             return;
         }
 
@@ -985,6 +989,20 @@ public class FactureService {
         facture.setControleurId(controleurChoisi.getId());
         facture.setControleurNom(controleurChoisi.getPrenom() + " " + controleurChoisi.getNom());
         facture.setDateAssignation(LocalDateTime.now());
+    }
+
+    private void nettoyerAssignationControleurInvalide(Facture facture, String regionId) {
+        if (facture.getControleurId() == null) return;
+        User controleurAssigne = userRepository.findById(facture.getControleurId()).orElse(null);
+        boolean assignationValide = controleurAssigne != null
+                && controleurAssigne.getRole() == Role.CONTROLEUR
+                && controleurAssigne.isActif()
+                && (regionId == null || java.util.Objects.equals(controleurAssigne.getRegionId(), regionId));
+        if (!assignationValide) {
+            facture.setControleurId(null);
+            facture.setControleurNom(null);
+            facture.setDateAssignation(null);
+        }
     }
 
 }

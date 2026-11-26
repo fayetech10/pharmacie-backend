@@ -36,7 +36,7 @@ public class SecuriteCentre {
                         // Étape service régional : validation / rejet d'une facture transmise.
                         .requestMatchers(antMatcher(HttpMethod.POST, "/api/factures-structure/*/valider"),
                                 antMatcher(HttpMethod.POST, "/api/factures-structure/*/rejeter"))
-                        .hasAnyRole("SERVICE_REGIONAL", "SERVICE_CENTRAL", "ADMIN")
+                        .hasAnyRole("SERVICE_REGIONAL", "CONTROLEUR", "SERVICE_CENTRAL", "ADMIN")
 
                         // Reprise des factures de l'ancienne application (09/10/2026) : le
                         // Service Régional, pour les structures de sa région (contrôlé en service).
@@ -58,8 +58,9 @@ public class SecuriteCentre {
                         // de postes) ou service régional. Le service vérifie l'étape et le
                         // périmètre (district du poste, région de la facture).
                         .requestMatchers(antMatcher(HttpMethod.POST, "/api/factures-structure/*/verification"),
-                                antMatcher(HttpMethod.POST, "/api/factures-structure/*/rejet-lignes"))
-                        .hasAnyRole("DISTRICT", "SERVICE_REGIONAL", "SERVICE_CENTRAL", "ADMIN")
+                                antMatcher(HttpMethod.POST, "/api/factures-structure/*/rejet-lignes"),
+                                antMatcher(HttpMethod.POST, "/api/factures-structure/*/lignes/*/decider"))
+                        .hasAnyRole("DISTRICT", "SERVICE_REGIONAL", "CONTROLEUR", "SERVICE_CENTRAL", "ADMIN")
 
                         // Lecture élargie aux superviseurs : ils n'ont pas de structure mais
                         // répondent d'un échelon, et ServiceFacturation.facturesDuPerimetre()
@@ -68,9 +69,10 @@ public class SecuriteCentre {
                         // périmètre avait été fait en service, pas ici, et l'écran régional
                         // restait vide. En GET seulement — un superviseur ne saisit pas de
                         // facture (cf. Role.estSuperviseur), la saisie reste à la règle suivante.
-                        .requestMatchers(antMatcher(HttpMethod.GET, "/api/factures-structure/**"))
+                        .requestMatchers(antMatcher(HttpMethod.GET, "/api/factures-structure"),
+                                antMatcher(HttpMethod.GET, "/api/factures-structure/**"))
                         .hasAnyRole("CENTRE_SANTE", "STRUCTURE_SANITAIRE", "DISTRICT",
-                                "SERVICE_REGIONAL", "SERVICE_CENTRAL", "ADMIN")
+                                "SERVICE_REGIONAL", "CONTROLEUR", "SERVICE_CENTRAL", "ADMIN")
 
                         // Suppressions (23/10/2026) : la structure émettrice, et le service régional
                         // pour les factures de SA région — la facture entière, un patient ou une

@@ -24,6 +24,7 @@ import static org.mockito.Mockito.mock;
 class PiecesObligatoiresTest {
 
     private final ServiceFacturation service = new ServiceFacturation(mock(DepotFactureStructure.class),
+            mock(DepotControleursFacturation.class),
             new ReglesFacturation(new ParametresFacturation()), mock(ClientIdentite.class),
             mock(ClientReferentiel.class), mock(ClientPharmacie.class), mock(Numerotation.class),
             mock(GenerateurPdf.class), mock(DepotLettreGarantie.class), mock(DepotFeuilleSoins.class),

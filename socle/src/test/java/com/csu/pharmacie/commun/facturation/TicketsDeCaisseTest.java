@@ -51,7 +51,7 @@ class TicketsDeCaisseTest {
     private final DepotPieceDossier depotPieces = mock(DepotPieceDossier.class);
     /** Les pièces « en base ». */
     private final List<PieceDossier> pieces = new ArrayList<>();
-    private final ServiceFacturation service = new ServiceFacturation(depot,
+    private final ServiceFacturation service = new ServiceFacturation(depot, mock(DepotControleursFacturation.class),
             new ReglesFacturation(new ParametresFacturation()), mock(ClientIdentite.class),
             mock(ClientReferentiel.class), mock(ClientPharmacie.class), mock(Numerotation.class),
             mock(GenerateurPdf.class), mock(DepotLettreGarantie.class), mock(DepotFeuilleSoins.class), depotPieces,

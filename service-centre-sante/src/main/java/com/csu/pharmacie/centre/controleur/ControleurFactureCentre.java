@@ -127,6 +127,16 @@ public class ControleurFactureCentre extends ControleurFacturation {
     public record RequeteRejetLignes(List<String> dossierIds, String motif, boolean rejete) {
     }
 
+    /** Décision d'une prestation par index de ligne, indépendante du statut global. */
+    @PostMapping("/{id}/lignes/{index}/decider")
+    public FactureStructure deciderLigne(@PathVariable String id, @PathVariable int index,
+                                         @RequestBody RequeteDecisionLigne corps) {
+        return service.deciderLigne(id, index, corps.accepter(), corps.motif());
+    }
+
+    public record RequeteDecisionLigne(boolean accepter, String motif) {
+    }
+
     // ────────────────────── reprise des factures de l'ancienne application ──────────────────────
 
     /**

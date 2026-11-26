@@ -69,7 +69,7 @@ class SaisiesRejoueesTest {
     private final DepotFactureStructure depot = mock(DepotFactureStructure.class);
     private final ClientIdentite clientIdentite = mock(ClientIdentite.class);
     private final Numerotation numerotation = mock(Numerotation.class);
-    private final ServiceFacturation service = new ServiceFacturation(depot,
+    private final ServiceFacturation service = new ServiceFacturation(depot, mock(DepotControleursFacturation.class),
             new ReglesFacturation(new ParametresFacturation()), clientIdentite,
             mock(ClientReferentiel.class), mock(ClientPharmacie.class), numerotation,
             mock(GenerateurPdf.class), mock(DepotLettreGarantie.class), mock(DepotFeuilleSoins.class),

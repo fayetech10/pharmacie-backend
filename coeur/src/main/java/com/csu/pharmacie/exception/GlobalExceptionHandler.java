@@ -57,8 +57,13 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
     }
 
-    @ExceptionHandler({ForbiddenException.class, AccessDeniedException.class})
-    public ResponseEntity<Map<String, Object>> handleForbidden(RuntimeException ex) {
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<Map<String, Object>> handleForbidden(ForbiddenException ex) {
+        return build(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
         return build(HttpStatus.FORBIDDEN, "Accès refusé");
     }
 

@@ -8,12 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * Endpoint de santé public et léger (ne touche pas la base de données).
- *
- * Sert de cible à un service de keep-alive externe (UptimeRobot, cron-job.org, Render Cron…)
- * qui le ping toutes les ~10 min : sur l'offre gratuite Render, l'instance s'endort après
- * 15 min d'inactivité et le premier accès suivant subit un long « cold start » (~30-60 s).
- * Maintenir l'instance éveillée supprime cette lenteur au premier chargement.
+ * Endpoint de santé public et léger pour sondes Docker et monitoring VPS.
  */
 @RestController
 @RequestMapping("/api/health")

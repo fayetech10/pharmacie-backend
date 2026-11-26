@@ -25,6 +25,7 @@ import com.csu.pharmacie.entity.Regime;
 import com.csu.pharmacie.entity.Role;
 import com.csu.pharmacie.entity.StatutFacture;
 import com.csu.pharmacie.entity.TypeStructure;
+import com.csu.pharmacie.entity.User;
 import com.csu.pharmacie.entity.VerificationCarte;
 import com.csu.pharmacie.utils.CleRapprochement;
 import lombok.RequiredArgsConstructor;
@@ -64,6 +65,7 @@ public class ServiceFacturation {
     private static final String PREFIXE_NUMERO = "FS";
 
     protected final DepotFactureStructure depot;
+    protected final DepotControleursFacturation depotControleurs;
     protected final ReglesFacturation regles;
     protected final ClientIdentite clientIdentite;
     protected final ClientReferentiel clientReferentiel;
@@ -183,6 +185,14 @@ public class ServiceFacturation {
     private List<FactureStructure> facturesDuPerimetre(boolean inclureBrouillons) {
         UtilisateurAuthentifie utilisateur = ContexteUtilisateur.courant();
         Role role = utilisateur.getRole();
+
+        if (role == Role.CONTROLEUR) {
+            List<FactureStructure> factures = utilisateur.getId() == null
+                    ? List.of() : depot.findByControleurId(utilisateur.getId());
+            return inclureBrouillons ? factures : factures.stream()
+                    .filter(f -> f.getStatut() != null && f.getStatut() != StatutFacture.BROUILLON)
+                    .toList();
+        }
 
         if (role == null || !role.estSuperviseur()) {
             return depot.findByStructureSanitaireId(ContexteUtilisateur.structureCourante());
@@ -377,6 +387,10 @@ public class ServiceFacturation {
         }
         if (utilisateur.getRole() == Role.SERVICE_REGIONAL) {
             verifierRegion(facture, utilisateur);
+            return;
+        }
+        if (utilisateur.getRole() == Role.CONTROLEUR) {
+            verifierAssignationControleur(facture, utilisateur);
             return;
         }
         // Niveau central et administrateur : accès national.
@@ -1929,6 +1943,9 @@ public class ServiceFacturation {
 
         StatutFacture cible = statutApresEnvoi(facture);
         facture.setStatut(cible);
+        if (cible == StatutFacture.ENVOYEE) {
+            assignerControleurAutomatique(facture);
+        }
         facture.setCommentaireRejet(null);
         // Renvoi après correction : on efface les rejets par patient de la passe précédente.
         if (facture.getDossiers() != null) {
@@ -1998,11 +2015,49 @@ public class ServiceFacturation {
         FactureStructure facture = chargerPourDistrict(id, utilisateur);
         exigerStatut(facture, StatutFacture.SOUMISE_CS, "validée");
         facture.setStatut(StatutFacture.ENVOYEE);
+        assignerControleurAutomatique(facture);
         facture.setCommentaireRejet(null);
         facture.setUpdatedAt(LocalDateTime.now());
         facture.tracer(evenement(StatutFacture.ENVOYEE, utilisateur,
                 "Validée par le district et transmise au service régional"));
         return depot.save(facture);
+    }
+
+    /** Affecte une facture transmise au contrôleur actif le moins chargé de sa région. */
+    private void assignerControleurAutomatique(FactureStructure facture) {
+        String regionId = facture.getRegionId();
+        if (regionId == null || regionId.isBlank()) {
+            regionId = clientIdentite.structure(facture.getStructureSanitaireId()).getRegionId();
+            facture.setRegionId(regionId);
+        }
+        if (regionId == null || regionId.isBlank()) {
+            return;
+        }
+
+        List<User> actifs = depotControleurs.findByRoleAndRegionId(Role.CONTROLEUR, regionId).stream()
+                .filter(User::isActif)
+                .toList();
+        if (actifs.isEmpty()) {
+            facture.setControleurId(null);
+            facture.setControleurNom(null);
+            facture.setDateAssignation(null);
+            return;
+        }
+
+        if (facture.getControleurId() != null && actifs.stream()
+                .anyMatch(controleur -> controleur.getId().equals(facture.getControleurId()))) {
+            facture.setDateAssignation(LocalDateTime.now());
+            return;
+        }
+
+        User controleurChoisi = actifs.stream()
+                .min(Comparator.comparingLong(controleur -> depot.countByControleurIdAndStatutIn(
+                        controleur.getId(), List.of(StatutFacture.ENVOYEE, StatutFacture.A_TRAITER,
+                                StatutFacture.EN_COURS_SR))))
+                .orElseThrow();
+        facture.setControleurId(controleurChoisi.getId());
+        facture.setControleurNom(controleurChoisi.getPrenom() + " " + controleurChoisi.getNom());
+        facture.setDateAssignation(LocalDateTime.now());
     }
 
     /**
@@ -2047,6 +2102,12 @@ public class ServiceFacturation {
         UtilisateurAuthentifie utilisateur = ContexteUtilisateur.courant();
         FactureStructure facture = chargerPourRegion(id, utilisateur);
         exigerStatut(facture, StatutFacture.ENVOYEE, "validée");
+        if (utilisateur.getRole() == Role.CONTROLEUR && (facture.getLignes() == null
+                || facture.getLignes().isEmpty()
+                || facture.getLignes().stream().anyMatch(l -> l.getStatutLigne() == null
+                        || "EN_ATTENTE".equals(l.getStatutLigne())))) {
+            throw ExceptionMetier.conflit("Décidez chaque prestation avant de valider cette facture.");
+        }
         facture.setStatut(StatutFacture.VALIDEE_SR);
         facture.setCommentaireRejet(null);
         facture.setUpdatedAt(LocalDateTime.now());
@@ -2074,6 +2135,35 @@ public class ServiceFacturation {
                 "Rejetée par le service régional");
         evenement.setCommentaire(commentaire);
         facture.tracer(evenement);
+        return depot.save(facture);
+    }
+
+    /** Enregistre la décision du contrôleur sur une prestation sans trancher la facture entière. */
+    @Transactional
+    public FactureStructure deciderLigne(String id, int index, boolean accepter, String motif) {
+        UtilisateurAuthentifie utilisateur = ContexteUtilisateur.courant();
+        if (utilisateur.getRole() != Role.CONTROLEUR && utilisateur.getRole() != Role.SERVICE_REGIONAL) {
+            throw ExceptionMetier.interdit("Seul le contrôleur ou le service régional peut décider d'une prestation.");
+        }
+        FactureStructure facture = chargerPourRegion(id, utilisateur);
+        if (facture.getStatut() != StatutFacture.ENVOYEE) {
+            throw ExceptionMetier.conflit("Les prestations ne peuvent être contrôlées que sur une facture transmise.");
+        }
+        List<LigneFactureStructure> lignes = facture.getLignes();
+        if (lignes == null || index < 0 || index >= lignes.size()) {
+            throw ExceptionMetier.introuvable("Prestation introuvable.");
+        }
+        if (!accepter && (motif == null || motif.isBlank())) {
+            throw ExceptionMetier.invalide("Le motif est obligatoire pour rejeter une prestation.");
+        }
+
+        LigneFactureStructure ligne = lignes.get(index);
+        ligne.setStatutLigne(accepter ? "ACCEPTEE" : "REJETEE");
+        ligne.setMotifRejet(accepter ? null : motif.trim());
+        ligne.setControleRegionLe(LocalDateTime.now());
+        ligne.setControleRegionPar(utilisateur.nomComplet());
+        facture.setLignes(new ArrayList<>(lignes));
+        facture.setUpdatedAt(LocalDateTime.now());
         return depot.save(facture);
     }
 
@@ -2232,8 +2322,22 @@ public class ServiceFacturation {
     private FactureStructure chargerPourRegion(String id, UtilisateurAuthentifie utilisateur) {
         FactureStructure facture = depot.findById(id)
                 .orElseThrow(() -> ExceptionMetier.introuvable("Facture introuvable : " + id));
-        verifierRegion(facture, utilisateur);
+        if (utilisateur.getRole() == Role.CONTROLEUR) {
+            verifierAssignationControleur(facture, utilisateur);
+        } else {
+            verifierRegion(facture, utilisateur);
+        }
         return facture;
+    }
+
+    private void verifierAssignationControleur(FactureStructure facture, UtilisateurAuthentifie utilisateur) {
+        if (!Objects.equals(facture.getControleurId(), utilisateur.getId())) {
+            throw ExceptionMetier.interdit("Cette facture ne vous est pas assignée.");
+        }
+        String regionFacture = regionDe(facture);
+        if (utilisateur.getRegionId() == null || !utilisateur.getRegionId().equals(regionFacture)) {
+            throw ExceptionMetier.interdit("Cette facture n'appartient pas à votre région.");
+        }
     }
 
     private static void exigerStatut(FactureStructure facture, StatutFacture attendu, String action) {

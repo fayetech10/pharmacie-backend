@@ -24,6 +24,9 @@ public interface DepotFactureStructure extends JpaRepository<FactureStructure, S
 
     List<FactureStructure> findByStructureSanitaireId(String structureSanitaireId);
 
+    /** Factures explicitement assignées à un contrôleur. */
+    List<FactureStructure> findByControleurId(String controleurId);
+
     /** Une facture par structure × régime × période : socle de la facturation incrémentielle. */
     Optional<FactureStructure> findByStructureSanitaireIdAndRegimeAndMoisAndAnnee(
             String structureSanitaireId, Regime regime, int mois, int annee);
@@ -43,6 +46,9 @@ public interface DepotFactureStructure extends JpaRepository<FactureStructure, S
     List<FactureStructure> findByRegionId(String regionId);
 
     List<FactureStructure> findByStatut(StatutFacture statut);
+
+    /** Charge active d'un contrôleur, utilisée pour une répartition équitable. */
+    long countByControleurIdAndStatutIn(String controleurId, Collection<StatutFacture> statuts);
 
     /**
      * Verrou consultatif PostgreSQL sur un nom libre, tenu jusqu'à la fin de la transaction

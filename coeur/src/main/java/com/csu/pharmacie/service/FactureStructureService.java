@@ -1159,21 +1159,12 @@ public class FactureStructureService {
                 ? userRepository.findByRoleAndRegionId(Role.CONTROLEUR, regionId)
                 : userRepository.findByRole(Role.CONTROLEUR);
         
-        if (controleurs.isEmpty()) {
-            controleurs = userRepository.findByRole(Role.CONTROLEUR);
-        }
-        if (controleurs.isEmpty() && regionId != null) {
-            controleurs = userRepository.findByRoleAndRegionId(Role.SERVICE_REGIONAL, regionId);
-        }
-        if (controleurs.isEmpty()) {
-            controleurs = userRepository.findByRole(Role.SERVICE_REGIONAL);
-        }
-        
         List<User> actifs = controleurs.stream()
                 .filter(User::isActif)
                 .collect(Collectors.toList());
         
         if (actifs.isEmpty()) {
+            nettoyerAssignationControleurInvalide(facture, regionId);
             return;
         }
 
@@ -1203,6 +1194,20 @@ public class FactureStructureService {
         facture.setControleurId(controleurChoisi.getId());
         facture.setControleurNom(controleurChoisi.getPrenom() + " " + controleurChoisi.getNom());
         facture.setDateAssignation(LocalDateTime.now());
+    }
+
+    private void nettoyerAssignationControleurInvalide(FactureStructure facture, String regionId) {
+        if (facture.getControleurId() == null) return;
+        User controleurAssigne = userRepository.findById(facture.getControleurId()).orElse(null);
+        boolean assignationValide = controleurAssigne != null
+                && controleurAssigne.getRole() == Role.CONTROLEUR
+                && controleurAssigne.isActif()
+                && (regionId == null || java.util.Objects.equals(controleurAssigne.getRegionId(), regionId));
+        if (!assignationValide) {
+            facture.setControleurId(null);
+            facture.setControleurNom(null);
+            facture.setDateAssignation(null);
+        }
     }
 
 }

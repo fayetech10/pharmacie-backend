@@ -19,6 +19,5 @@ uploads/
 # Scripts et docs : n'interviennent pas dans la compilation
 demarrer.ps1
 *.md
-render.yaml
 Dockerfile
 .dockerignore

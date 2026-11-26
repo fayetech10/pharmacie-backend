@@ -31,8 +31,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -DskipTests package
 
 # ─────────────────────────────────────────────────────────────────────────────
 FROM eclipse-temurin:17-jre-alpine AS runtime
-# Defaut « coeur » : render.yaml construit ce Dockerfile SANS build-arg et attend
-# l'application historique. Le retirer casserait silencieusement le deploiement Render.
+# Module par défaut : coeur
 ARG MODULE=coeur
 ARG PORT=8080
 WORKDIR /app

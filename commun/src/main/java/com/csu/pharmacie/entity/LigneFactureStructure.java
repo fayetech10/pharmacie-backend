@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 /**
@@ -53,6 +54,12 @@ public class LigneFactureStructure {
     private int quantite;
     private double prixUnitaire;
     private double montant;         // quantite * prixUnitaire (recalculé en service)
+    /** Décision du contrôle régional : EN_ATTENTE, ACCEPTEE ou REJETEE. */
+    private String statutLigne;
+    /** Motif requis lorsque la prestation est rejetée par le contrôleur. */
+    private String motifRejet;
+    private LocalDateTime controleRegionLe;
+    private String controleRegionPar;
     private String motifCesarienne; // Renseigné seulement si régime == CESARIENNE
 
     private double montantBeneficiaire;

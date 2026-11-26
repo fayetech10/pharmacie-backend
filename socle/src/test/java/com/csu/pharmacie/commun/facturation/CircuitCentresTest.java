@@ -39,7 +39,7 @@ class CircuitCentresTest {
 
     private final DepotFactureStructure depot = mock(DepotFactureStructure.class);
     private final ClientIdentite clientIdentite = mock(ClientIdentite.class);
-    private final ServiceFacturation service = new ServiceFacturation(depot,
+    private final ServiceFacturation service = new ServiceFacturation(depot, mock(DepotControleursFacturation.class),
             new ReglesFacturation(new ParametresFacturation()), clientIdentite, mock(ClientReferentiel.class),
             mock(ClientPharmacie.class), mock(Numerotation.class), mock(GenerateurPdf.class),
             mock(DepotLettreGarantie.class), mock(DepotFeuilleSoins.class), mock(DepotPieceDossier.class),

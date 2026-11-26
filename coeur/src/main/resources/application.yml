@@ -1,5 +1,5 @@
 server:
-  # Render injecte la variable PORT ; on la respecte (fallback SERVER_PORT puis 8080 en local).
+  # Port d'écoute du serveur (variable PORT ou SERVER_PORT, sinon 8080 par défaut).
   port: ${PORT:${SERVER_PORT:8080}}
   compression:
     enabled: true
@@ -74,10 +74,8 @@ app:
       # concerné ; les prises en charge antérieures gardent l'ancien circuit. Vide = actif.
       a-partir-de: ${APP_CS_EPS_A_PARTIR_DE:}
   jwt:
-    # PRODUCTION : définir APP_JWT_SECRET (>= 32 caractères aléatoires) — render.yaml
-    # le génère automatiquement. Sans variable, un secret ÉPHÉMÈRE est généré au
-    # démarrage (voir JwtUtil) : pratique en local, mais les sessions ne survivent
-    # pas à un redémarrage. Un secret fourni mais trop court fait échouer le démarrage.
+    # PRODUCTION : définir APP_JWT_SECRET (>= 32 caractères aléatoires).
+    # Sans variable, un secret ÉPHÉMÈRE est généré au démarrage (voir JwtUtil).
     secret: ${APP_JWT_SECRET:}
     expiration: ${APP_JWT_EXPIRATION:86400000}
 

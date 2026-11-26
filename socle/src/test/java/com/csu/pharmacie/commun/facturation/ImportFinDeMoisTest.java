@@ -46,7 +46,7 @@ class ImportFinDeMoisTest {
 
     private final DepotFactureStructure depot = mock(DepotFactureStructure.class);
     private final DepotLettreGarantie depotLettres = mock(DepotLettreGarantie.class);
-    private final ServiceFacturation service = new ServiceFacturation(depot,
+    private final ServiceFacturation service = new ServiceFacturation(depot, mock(DepotControleursFacturation.class),
             new ReglesFacturation(new ParametresFacturation()), mock(ClientIdentite.class),
             mock(ClientReferentiel.class), mock(ClientPharmacie.class), mock(Numerotation.class),
             mock(GenerateurPdf.class), depotLettres, mock(DepotFeuilleSoins.class), mock(DepotPieceDossier.class),

@@ -6,6 +6,7 @@ import com.csu.pharmacie.commun.client.ClientPharmacie;
 import com.csu.pharmacie.commun.client.ClientReferentiel;
 import com.csu.pharmacie.commun.export.GenerateurPdf;
 import com.csu.pharmacie.commun.facturation.DepotFactureStructure;
+import com.csu.pharmacie.commun.facturation.DepotControleursFacturation;
 import com.csu.pharmacie.commun.facturation.DepotFeuilleSoins;
 import com.csu.pharmacie.commun.facturation.DepotLettreGarantie;
 import com.csu.pharmacie.commun.facturation.DepotPieceDossier;
@@ -56,7 +57,7 @@ class SuppressionServiceRegionalTest {
     private final DepotFactureStructure depot = mock(DepotFactureStructure.class);
     private final DepotPieceDossier pieces = mock(DepotPieceDossier.class);
     private final ClientReferentiel referentiel = mock(ClientReferentiel.class);
-    private final ServiceFacturation service = new ServiceFacturation(depot,
+    private final ServiceFacturation service = new ServiceFacturation(depot, mock(DepotControleursFacturation.class),
             new ReglesFacturation(new ParametresFacturation()), mock(ClientIdentite.class), referentiel,
             mock(ClientPharmacie.class), mock(Numerotation.class), mock(GenerateurPdf.class),
             mock(DepotLettreGarantie.class), mock(DepotFeuilleSoins.class), pieces, mock(ServiceCarteCsu.class));
