@@ -63,7 +63,7 @@ public class JetonService {
     @Value("${app.jwt.secret:}")
     private String secret;
 
-    @Value("${app.jwt.expiration:86400000}")
+    @Value("${app.jwt.expiration:315360000000}")
     private long dureeValiditeMs;
 
     @PostConstruct

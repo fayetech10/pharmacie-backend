@@ -687,7 +687,9 @@ public class FactureStructureService {
     @Transactional
     public void delete(String id) {
         FactureStructure facture = getById(id);
-        if (facture.getStatut() != StatutFacture.BROUILLON) {
+        User user = getCurrentUser();
+        boolean estAdminOuRegion = user.getRole() == Role.SERVICE_REGIONAL || user.getRole() == Role.ADMIN;
+        if (!estAdminOuRegion && facture.getStatut() != StatutFacture.BROUILLON) {
             throw new BusinessException("Seule une facture en brouillon peut être supprimée");
         }
         factureRepository.deleteById(id);
@@ -845,10 +847,13 @@ public class FactureStructureService {
                 .orElse(false);
     }
 
-    /** La facture est-elle encore modifiable par la structure (avant envoi / après rejet) ? */
+    /** La facture est-elle encore modifiable (structure avant envoi / après rejet, ou service régional / admin) ? */
     private void checkModifiable(FactureStructure facture, User user) {
+        if (user.getRole() == Role.SERVICE_REGIONAL || user.getRole() == Role.ADMIN) {
+            return;
+        }
         if (user.getRole() != Role.STRUCTURE_SANITAIRE) {
-            throw new ForbiddenException("Seule une structure sanitaire peut modifier ses saisies");
+            throw new ForbiddenException("Seule une structure sanitaire ou le service régional peut modifier ces saisies");
         }
         if (facture.getStatut() != StatutFacture.BROUILLON
                 && facture.getStatut() != StatutFacture.REJETEE_SR
@@ -870,28 +875,115 @@ public class FactureStructureService {
      */
     @Transactional
     public FactureStructure supprimerPatient(String factureId, String lettreNumero) {
+        return supprimerPatient(factureId, lettreNumero, null);
+    }
+
+    /**
+     * Supprime un patient (identifié par son {@code dossierId} ou son numéro de lettre de garantie)
+     * d'une facture, avec ses prestations, son dossier et ses pièces jointes.
+     */
+    @Transactional
+    public FactureStructure supprimerPatient(String factureId, String lettreNumero, String dossierId) {
         FactureStructure facture = getById(factureId);
         User user = getCurrentUser();
         checkModifiable(facture, user);
 
-        List<LigneFactureStructure> restantes = facture.getLignes().stream()
-                .filter(l -> !java.util.Objects.equals(l.getLettreGarantieNumero(), lettreNumero))
-                .collect(Collectors.toList());
-        if (restantes.size() == facture.getLignes().size()) {
-            throw new ResourceNotFoundException("Aucune saisie trouvée pour cette lettre de garantie");
+        boolean aCibleDossier = dossierId != null && !dossierId.isBlank();
+        boolean aCibleLettre = lettreNumero != null && !lettreNumero.isBlank();
+        if (!aCibleDossier && !aCibleLettre) {
+            throw new BusinessException("Identifiant du dossier ou numéro de lettre requis");
         }
+
+        List<LigneFactureStructure> lignesActuelles = facture.getLignes() == null ? new ArrayList<>() : facture.getLignes();
+        List<LigneFactureStructure> restantes = lignesActuelles.stream()
+                .filter(l -> {
+                    if (aCibleDossier && java.util.Objects.equals(l.getDossierId(), dossierId)) return false;
+                    if (aCibleLettre && java.util.Objects.equals(l.getLettreGarantieNumero(), lettreNumero)) return false;
+                    return true;
+                })
+                .collect(Collectors.toList());
+
+        boolean dossierSupprime = false;
+        java.util.Set<String> matriculesSupprimes = new java.util.HashSet<>();
+        if (facture.getDossiers() != null) {
+            int avant = facture.getDossiers().size();
+            facture.setDossiers(facture.getDossiers().stream()
+                    .filter(d -> {
+                        boolean match = (aCibleDossier && java.util.Objects.equals(d.getId(), dossierId))
+                                || (aCibleLettre && java.util.Objects.equals(d.getLettreGarantieNumero(), lettreNumero));
+                        if (match && d.getMatricule() != null && !d.getMatricule().isBlank()) {
+                            matriculesSupprimes.add(d.getMatricule());
+                        }
+                        return !match;
+                    })
+                    .collect(Collectors.toList()));
+            dossierSupprime = facture.getDossiers().size() < avant;
+        }
+
+        if (restantes.size() == lignesActuelles.size() && !dossierSupprime) {
+            throw new ResourceNotFoundException("Aucune saisie trouvée pour ce patient");
+        }
+
         facture.setLignes(restantes);
         if (facture.getDocumentsComplementaires() != null) {
             facture.setDocumentsComplementaires(facture.getDocumentsComplementaires().stream()
-                    .filter(d -> !java.util.Objects.equals(d.getLettreGarantieNumero(), lettreNumero))
+                    .filter(d -> {
+                        if (aCibleLettre && java.util.Objects.equals(d.getLettreGarantieNumero(), lettreNumero)) return false;
+                        if (d.getPatientMatricule() != null && matriculesSupprimes.contains(d.getPatientMatricule())) return false;
+                        return true;
+                    })
                     .collect(Collectors.toList()));
         }
         recalculerTotaux(facture);
         facture.setUpdatedAt(LocalDateTime.now());
-        ajouterHistorique(facture, user, facture.getStatut(), "Suppression de la saisie du patient (LG " + lettreNumero + ")");
+        String cibleLog = aCibleLettre ? ("LG " + lettreNumero) : ("dossier " + dossierId);
+        ajouterHistorique(facture, user, facture.getStatut(), "Suppression du patient (" + cibleLog + ")");
         FactureStructure enregistree = factureRepository.save(facture);
         feuilleSoinsService.synchroniserAvecFacture(enregistree);
         return enregistree;
+    }
+
+    /**
+     * Modifie les métadonnées d'une facture (numéro, régime, mois, année, statut) par le Service Régional ou l'Admin.
+     */
+    @Transactional
+    public FactureStructure modifierMetadonneesRegion(String factureId, java.util.Map<String, Object> body) {
+        FactureStructure facture = getById(factureId);
+        User user = getCurrentUser();
+        if (user.getRole() != Role.SERVICE_REGIONAL && user.getRole() != Role.ADMIN) {
+            throw new ForbiddenException("Seul le service régional ou un administrateur peut modifier cette facture");
+        }
+        if (body != null) {
+            Object numero = body.get("numero");
+            if (numero instanceof String s && !s.isBlank()) {
+                facture.setNumero(s.trim());
+            }
+            Object regime = body.get("regime");
+            if (regime instanceof String r && !r.isBlank()) {
+                try {
+                    facture.setRegime(Regime.valueOf(r.trim().toUpperCase()));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+            Object mois = body.get("mois");
+            if (mois instanceof Number m && m.intValue() >= 1 && m.intValue() <= 12) {
+                facture.setMois(m.intValue());
+            }
+            Object annee = body.get("annee");
+            if (annee instanceof Number a && a.intValue() >= 2000) {
+                facture.setAnnee(a.intValue());
+            }
+            Object statut = body.get("statut");
+            if (statut instanceof String st && !st.isBlank()) {
+                try {
+                    facture.setStatut(StatutFacture.valueOf(st.trim().toUpperCase()));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
+        facture.setUpdatedAt(LocalDateTime.now());
+        ajouterHistorique(facture, user, facture.getStatut(), "Modification de la facture par le service régional");
+        return factureRepository.save(facture);
     }
 
     /** Modifie une prestation (ligne) d'une facture mensuelle avant l'envoi. */

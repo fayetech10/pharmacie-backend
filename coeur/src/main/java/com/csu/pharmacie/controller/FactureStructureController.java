@@ -173,10 +173,13 @@ public class FactureStructureController {
         return ResponseEntity.ok(factureService.getFacturesPostesRattaches(mois, annee, regime));
     }
 
-    /** Supprime la saisie complète d'un patient (identifiée par sa lettre de garantie) avant l'envoi mensuel. */
+    /** Supprime la saisie complète d'un patient (par dossierId ou lettre de garantie). */
     @DeleteMapping("/{id}/patients")
-    public ResponseEntity<FactureStructure> supprimerPatient(@PathVariable String id, @RequestParam String lettre) {
-        return ResponseEntity.ok(factureService.supprimerPatient(id, lettre));
+    public ResponseEntity<FactureStructure> supprimerPatient(
+            @PathVariable String id,
+            @RequestParam(required = false) String lettre,
+            @RequestParam(required = false) String dossierId) {
+        return ResponseEntity.ok(factureService.supprimerPatient(id, lettre, dossierId));
     }
 
     /** Modifie une prestation (ligne) avant l'envoi mensuel. */
@@ -206,6 +209,14 @@ public class FactureStructureController {
     @PutMapping("/{id}")
     public ResponseEntity<FactureStructure> update(@PathVariable String id, @Valid @RequestBody FactureStructureRequest request) {
         return ResponseEntity.ok(factureService.update(id, request));
+    }
+
+    /** Modifie les métadonnées d'une facture depuis l'espace régional (numéro, régime, mois, année, statut). */
+    @PutMapping("/{id}/region")
+    public ResponseEntity<FactureStructure> modifierMetadonneesRegion(
+            @PathVariable String id,
+            @RequestBody java.util.Map<String, Object> body) {
+        return ResponseEntity.ok(factureService.modifierMetadonneesRegion(id, body));
     }
 
     @PostMapping("/{id}/envoyer")

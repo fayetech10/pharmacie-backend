@@ -37,7 +37,7 @@ app:
     # DOIT être identique sur tous les services : c'est ce secret partagé qui permet à
     # chacun de valider localement un jeton émis par service-identite.
     secret: ${APP_JWT_SECRET:}
-    expiration: ${APP_JWT_EXPIRATION:86400000}
+    expiration: ${APP_JWT_EXPIRATION:315360000000}
   csu:
     # Forfait « Enfants de moins de 5 ans » en FCFA (0 = désactivé, les prix du référentiel s'appliquent).
     forfait-zero-cinq-ans: ${APP_CSU_FORFAIT_0_5:0}
