@@ -875,23 +875,31 @@ public class FactureStructureService {
      */
     @Transactional
     public FactureStructure supprimerPatient(String factureId, String lettreNumero) {
-        return supprimerPatient(factureId, lettreNumero, null);
+        return supprimerPatient(factureId, lettreNumero, null, null, null, null);
+    }
+
+    @Transactional
+    public FactureStructure supprimerPatient(String factureId, String lettreNumero, String dossierId) {
+        return supprimerPatient(factureId, lettreNumero, dossierId, null, null, null);
     }
 
     /**
-     * Supprime un patient (identifié par son {@code dossierId} ou son numéro de lettre de garantie)
+     * Supprime un patient (identifié par {@code dossierId}, {@code lettreNumero}, {@code matricule} ou {@code nom/prenom})
      * d'une facture, avec ses prestations, son dossier et ses pièces jointes.
      */
     @Transactional
-    public FactureStructure supprimerPatient(String factureId, String lettreNumero, String dossierId) {
+    public FactureStructure supprimerPatient(String factureId, String lettreNumero, String dossierId,
+                                             String matricule, String nom, String prenom) {
         FactureStructure facture = getById(factureId);
         User user = getCurrentUser();
         checkModifiable(facture, user);
 
         boolean aCibleDossier = dossierId != null && !dossierId.isBlank();
         boolean aCibleLettre = lettreNumero != null && !lettreNumero.isBlank();
-        if (!aCibleDossier && !aCibleLettre) {
-            throw new BusinessException("Identifiant du dossier ou numéro de lettre requis");
+        boolean aCibleMatricule = matricule != null && !matricule.isBlank();
+        boolean aCibleNom = nom != null && !nom.isBlank();
+        if (!aCibleDossier && !aCibleLettre && !aCibleMatricule && !aCibleNom) {
+            throw new BusinessException("Identifiant du patient requis");
         }
 
         List<LigneFactureStructure> lignesActuelles = facture.getLignes() == null ? new ArrayList<>() : facture.getLignes();
@@ -899,18 +907,27 @@ public class FactureStructureService {
                 .filter(l -> {
                     if (aCibleDossier && java.util.Objects.equals(l.getDossierId(), dossierId)) return false;
                     if (aCibleLettre && java.util.Objects.equals(l.getLettreGarantieNumero(), lettreNumero)) return false;
+                    if (aCibleMatricule && java.util.Objects.equals(l.getPatientMatricule(), matricule)) return false;
+                    if (aCibleNom && l.getPatientNom() != null && l.getPatientNom().trim().equalsIgnoreCase(nom.trim())
+                            && (prenom == null || prenom.isBlank() || (l.getPatientPrenom() != null && l.getPatientPrenom().trim().equalsIgnoreCase(prenom.trim())))) {
+                        return false;
+                    }
                     return true;
                 })
                 .collect(Collectors.toList());
 
         boolean dossierSupprime = false;
         java.util.Set<String> matriculesSupprimes = new java.util.HashSet<>();
+        if (aCibleMatricule) matriculesSupprimes.add(matricule);
         if (facture.getDossiers() != null) {
             int avant = facture.getDossiers().size();
             facture.setDossiers(facture.getDossiers().stream()
                     .filter(d -> {
                         boolean match = (aCibleDossier && java.util.Objects.equals(d.getId(), dossierId))
-                                || (aCibleLettre && java.util.Objects.equals(d.getLettreGarantieNumero(), lettreNumero));
+                                || (aCibleLettre && java.util.Objects.equals(d.getLettreGarantieNumero(), lettreNumero))
+                                || (aCibleMatricule && java.util.Objects.equals(d.getMatricule(), matricule))
+                                || (aCibleNom && d.getNom() != null && d.getNom().trim().equalsIgnoreCase(nom.trim())
+                                    && (prenom == null || prenom.isBlank() || (d.getPrenom() != null && d.getPrenom().trim().equalsIgnoreCase(prenom.trim()))));
                         if (match && d.getMatricule() != null && !d.getMatricule().isBlank()) {
                             matriculesSupprimes.add(d.getMatricule());
                         }
@@ -936,7 +953,7 @@ public class FactureStructureService {
         }
         recalculerTotaux(facture);
         facture.setUpdatedAt(LocalDateTime.now());
-        String cibleLog = aCibleLettre ? ("LG " + lettreNumero) : ("dossier " + dossierId);
+        String cibleLog = aCibleLettre ? ("LG " + lettreNumero) : (aCibleDossier ? ("dossier " + dossierId) : (nom + " " + (prenom == null ? "" : prenom)).trim());
         ajouterHistorique(facture, user, facture.getStatut(), "Suppression du patient (" + cibleLog + ")");
         FactureStructure enregistree = factureRepository.save(facture);
         feuilleSoinsService.synchroniserAvecFacture(enregistree);

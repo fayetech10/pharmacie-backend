@@ -173,13 +173,16 @@ public class FactureStructureController {
         return ResponseEntity.ok(factureService.getFacturesPostesRattaches(mois, annee, regime));
     }
 
-    /** Supprime la saisie complète d'un patient (par dossierId ou lettre de garantie). */
+    /** Supprime la saisie complète d'un patient (par dossierId, lettre, matricule ou nom/prénom). */
     @DeleteMapping("/{id}/patients")
     public ResponseEntity<FactureStructure> supprimerPatient(
             @PathVariable String id,
             @RequestParam(required = false) String lettre,
-            @RequestParam(required = false) String dossierId) {
-        return ResponseEntity.ok(factureService.supprimerPatient(id, lettre, dossierId));
+            @RequestParam(required = false) String dossierId,
+            @RequestParam(required = false) String matricule,
+            @RequestParam(required = false) String nom,
+            @RequestParam(required = false) String prenom) {
+        return ResponseEntity.ok(factureService.supprimerPatient(id, lettre, dossierId, matricule, nom, prenom));
     }
 
     /** Modifie une prestation (ligne) avant l'envoi mensuel. */
